@@ -1,8 +1,8 @@
 const samples = [
-    { n: "Maggie", s: "09:00", e: "18:00" }, { n: "Austin", s: "09:00", e: "14:00" },
-    { n: "Maria V.", s: "10:00", e: "16:00" }, { n: "Theresa", s: "12:00", e: "21:00" },
-    { n: "Liza", s: "13:00", e: "22:00" }, { n: "Joseph", s: "14:00", e: "22:00" },
-    { n: "Ifrah", s: "16:00", e: "22:00" }, { n: "Kenny", s: "17:00", e: "22:00" }
+    { n: "James", s: "09:00", e: "18:00" }, { n: "Mary", s: "09:00", e: "14:00" },
+    { n: "John", s: "10:00", e: "16:00" }, { n: "Linda", s: "12:00", e: "21:00" },
+    { n: "Robert", s: "13:00", e: "22:00" }, { n: "Patricia", s: "14:00", e: "22:00" },
+    { n: "Michael", s: "16:00", e: "22:00" }, { n: "Barbara", s: "17:00", e: "22:00" }
 ];
 
 function timeToMins(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
