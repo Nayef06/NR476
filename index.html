@@ -16,16 +16,6 @@
 <body>
 
     <div class="container">
-        <header class="no-print">
-            <div class="logo-container">
-                <!-- width increased to ensure the full wordmark fits within the viewBox; additional
-                     overflow rule on the svg handles any slight overhangs gracefully -->
-                <svg viewBox="0 0 300 24" xmlns="http://www.w3.org/2000/svg">
-                    <text x="0" y="20" font-family="Outfit, sans-serif" font-weight="700" font-size="25"
-                        letter-spacing="0.05em">NORDSTROM <tspan font-weight="300">RACK</tspan></text>
-                </svg>
-            </div>
-        </header>
         <div class="config-grid no-print">
             <div class="input-group"><label>Store Opens</label><input type="time" id="storeOpen" value="10:00"></div>
             <div class="input-group"><label>Store Closes</label><input type="time" id="storeClose" value="21:00"></div>
@@ -38,6 +28,22 @@
         <button class="btn-gen no-print" onclick="generate()">Generate Optimized Schedule</button>
 
         <div id="results" style="display:none;">
+            <section class="timeline-section" aria-labelledby="timelineTitle">
+                <div class="section-heading">
+                    <div>
+                        <h2 id="timelineTitle">Shift Coverage</h2>
+                        <p>Drag breaks and lunches in 15-minute steps. Floor count excludes those and fitting-room assignments.</p>
+                    </div>
+                    <div id="coverageStatus" class="coverage-status" aria-live="polite"></div>
+                </div>
+                <div class="timeline-legend" aria-label="Timeline legend">
+                    <span><i class="legend-swatch work"></i>Working</span>
+                    <span><i class="legend-swatch break"></i>Break</span>
+                    <span><i class="legend-swatch lunch"></i>Lunch</span>
+                    <span><i class="legend-swatch uncovered"></i>Nobody on floor</span>
+                </div>
+                <div id="shiftTimeline" class="shift-timeline"></div>
+            </section>
             <div class="results-grid">
                 <div>
                     <h2>Floor & Breaks</h2>
@@ -67,10 +73,25 @@
                     </table>
                 </div>
             </div>
-            <div style="text-align: right;">
-            </div>
         </div>
     </div>
+
+    <dialog id="moveConfirmDialog" class="move-dialog">
+        <form method="dialog">
+            <h3>Move this break?</h3>
+            <p id="moveConfirmMessage"></p>
+            <label class="dialog-checkbox">
+                <input type="checkbox" id="skipMoveConfirm">
+                Don’t ask again
+            </label>
+            <div class="dialog-actions">
+                <button value="cancel" class="dialog-cancel">Cancel</button>
+                <button value="confirm" class="dialog-confirm">Move break</button>
+            </div>
+        </form>
+    </dialog>
+
+    <div id="dragTimeTooltip" class="drag-time-tooltip" role="status" aria-live="polite"></div>
 
     <script src="script.js"></script>
 </body>
