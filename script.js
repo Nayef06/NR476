@@ -57,12 +57,32 @@ function clearWorkers() {
     document.getElementById('results').style.display = 'none';
 }
 
+function getPreferredFittingRoomCloser(workers, close) {
+    const closingEnd = close + 60;
+    const closingStart = closingEnd - 120;
+    const coversClosingWindow = worker => (
+        worker.start <= closingStart && worker.end >= closingEnd
+    );
+    const nayef = workers.find(worker => (
+        worker.name.trim().toLowerCase() === 'nayef' && coversClosingWindow(worker)
+    ));
+
+    return nayef
+        || workers.find(worker => worker.end === closingEnd && coversClosingWindow(worker))
+        || workers.find(coversClosingWindow)
+        || workers[workers.length - 1];
+}
+
 function createFittingRoomRotation(workers, open, close) {
     const closingTimeMins = close + 60;
     const closingStart = closingTimeMins - 120;
-    const closer = workers.find(worker => worker.end === closingTimeMins) || workers[workers.length - 1];
+    const closer = getPreferredFittingRoomCloser(workers, close);
     const blocks = [];
     const consecutiveMap = {};
+    const chooseWorker = options => (
+        options.find(worker => worker.name.trim().toLowerCase() !== 'nayef')
+        || options[0]
+    );
 
     for (let start = open; start < closingTimeMins; start += 60) {
         const end = start + 60;
@@ -91,19 +111,21 @@ function createFittingRoomRotation(workers, open, close) {
             block.s = closer.name;
         } else {
             const options = workers.filter(worker => isAvailable(worker));
-            const choice = options[0] || workers.find(worker => (
+            const fallbackOptions = workers.filter(worker => (
                 coversBlock(worker) && !isOnBreak(worker)
             ));
+            const choice = chooseWorker(options) || chooseWorker(fallbackOptions);
             block.s = choice ? choice.name : 'Manager/Lead';
         }
 
         if (start >= open + 120 && start < close - 120) {
             const options = workers.filter(worker => isAvailable(worker, [block.s]));
-            const choice = options[0] || workers.find(worker => (
+            const fallbackOptions = workers.filter(worker => (
                 worker.name !== block.s
                 && coversBlock(worker)
                 && !isOnBreak(worker)
             ));
+            const choice = chooseWorker(options) || chooseWorker(fallbackOptions);
             block.g = choice ? choice.name : 'Manager/Lead';
         }
 
@@ -116,32 +138,6 @@ function createFittingRoomRotation(workers, open, close) {
         });
         blocks.push(block);
     }
-
-    const nayef = workers.find(worker => worker.name.toLowerCase() === 'nayef');
-    if (!nayef) return blocks;
-
-    const nayefAvailable = (blockStart, blockEnd) => {
-        if (nayef.start > blockStart || nayef.end < blockEnd) return false;
-        if (blockStart % 60 !== 0) return false;
-        return !nayef.tasks.some(task => task.s < blockEnd && task.e > blockStart);
-    };
-
-    const sorterSlotIndices = [];
-    blocks.forEach((block, index) => {
-        if (block.s !== '—') sorterSlotIndices.push(index);
-    });
-    const lastTwoIndices = sorterSlotIndices.slice(-2);
-    const canFillBothLast = lastTwoIndices.length === 2 && lastTwoIndices.every(index => (
-        nayefAvailable(blocks[index].start, blocks[index].end)
-    ));
-
-    blocks.forEach((block, index) => {
-        if (block.s === '—' || block.s === nayef.name || block.g === nayef.name) return;
-        const isLastTwo = lastTwoIndices.includes(index);
-        if ((!isLastTwo || canFillBothLast) && nayefAvailable(block.start, block.end)) {
-            block.s = nayef.name;
-        }
-    });
 
     return blocks;
 }
@@ -225,7 +221,7 @@ function createEvenBreakSchedule(worker, plan, occupied, isCloser, closingStart)
 function scheduleAllWorkerBreaks(workers, close) {
     const closingTimeMins = close + 60;
     const closingStart = closingTimeMins - 120;
-    const closer = workers.find(worker => worker.end === closingTimeMins) || workers[workers.length - 1];
+    const closer = getPreferredFittingRoomCloser(workers, close);
     const occupied = [];
 
     workers.forEach(worker => {
@@ -338,6 +334,15 @@ function taskConflicts(worker, taskIndex, start) {
     return worker.tasks.some((otherTask, otherIndex) => (
         otherIndex !== taskIndex && start < otherTask.e && end > otherTask.s
     ));
+}
+
+function getTaskSchedulingEnd(worker) {
+    if (!currentSchedule) return worker.end;
+    const closer = getPreferredFittingRoomCloser(
+        currentSchedule.workers,
+        currentSchedule.close
+    );
+    return worker === closer ? Math.min(worker.end, currentSchedule.close - 60) : worker.end;
 }
 
 function getWorkIntervals(worker) {
@@ -478,7 +483,7 @@ function commitScheduleTableEdit(element) {
     const conflicts = worker.tasks.some((otherTask, otherIndex) => (
         otherIndex !== taskIndex && start < otherTask.e && end > otherTask.s
     ));
-    if (end <= start || start < worker.start || end > worker.end || conflicts) {
+    if (end <= start || start < worker.start || end > getTaskSchedulingEnd(worker) || conflicts) {
         refreshCurrentSchedule();
         return;
     }
@@ -517,6 +522,52 @@ function setupScheduleTableEditing() {
             if (element.dataset.cancelEdit === 'true' || !shouldCommit) refreshCurrentSchedule();
             else commitScheduleTableEdit(element);
         }, { once: true });
+    });
+}
+
+function workerCanCoverFittingBlock(worker, block) {
+    const coversFullBlock = worker.start <= block.start && worker.end >= block.end;
+    const onBreak = worker.tasks.some(task => task.s < block.end && task.e > block.start);
+    return coversFullBlock && !onBreak;
+}
+
+function fittingRoomWorkerOptions(workers, block, role) {
+    const otherRole = role === 'g' ? 's' : 'g';
+    const unavailableName = block[otherRole];
+    const currentName = block[role];
+    const availableWorkers = workers
+        .filter(worker => (
+            worker.name !== unavailableName && workerCanCoverFittingBlock(worker, block)
+        ))
+        .sort((first, second) => (
+            Number(first.name.trim().toLowerCase() === 'nayef')
+            - Number(second.name.trim().toLowerCase() === 'nayef')
+        ));
+    const choices = ['—', 'Manager/Lead', ...availableWorkers.map(worker => worker.name)];
+
+    if (!choices.includes(currentName)) choices.push(currentName);
+    return choices.map(choice => (
+        `<option value="${escapeHTML(choice)}"${choice === currentName ? ' selected' : ''}>${escapeHTML(choice)}</option>`
+    )).join('');
+}
+
+function setupFittingRoomAssignmentEditing() {
+    document.querySelectorAll('.fitting-assignment-select').forEach(select => {
+        select.addEventListener('change', () => {
+            if (!currentSchedule) return;
+
+            const block = currentSchedule.fittingRoomBlocks[Number(select.dataset.blockIndex)];
+            const role = select.dataset.role;
+            if (!block || !['g', 's'].includes(role)) return;
+
+            block[role] = select.value;
+            render(
+                currentSchedule.workers,
+                currentSchedule.fittingRoomBlocks,
+                currentSchedule.open,
+                currentSchedule.close
+            );
+        });
     });
 }
 
@@ -562,13 +613,18 @@ async function requestTaskMove(workerIndex, taskIndex, newStart) {
 
     const worker = currentSchedule.workers[workerIndex];
     const task = worker && worker.tasks[taskIndex];
-    if (!task || newStart === task.s || taskConflicts(worker, taskIndex, newStart)) return false;
+    const duration = task ? task.e - task.s : 0;
+    if (
+        !task
+        || newStart === task.s
+        || newStart + duration > getTaskSchedulingEnd(worker)
+        || taskConflicts(worker, taskIndex, newStart)
+    ) return false;
 
     moveInProgress = true;
     const confirmed = await confirmTaskMove(worker, task, newStart);
 
     if (confirmed) {
-        const duration = task.e - task.s;
         task.s = newStart;
         task.e = newStart + duration;
         worker.tasks.sort((first, second) => first.s - second.s);
@@ -596,7 +652,7 @@ function setupTimelineDragging(rangeStart, range, position) {
             const duration = task.e - task.s;
             const originalStart = task.s;
             const minStart = Math.ceil(worker.start / 15) * 15;
-            const maxStart = Math.floor((worker.end - duration) / 15) * 15;
+            const maxStart = Math.floor((getTaskSchedulingEnd(worker) - duration) / 15) * 15;
             let proposedStart = originalStart;
             let hasConflict = false;
 
@@ -656,7 +712,7 @@ function setupTimelineDragging(rangeStart, range, position) {
             const duration = task.e - task.s;
             const delta = event.key === 'ArrowLeft' ? -15 : 15;
             const minStart = Math.ceil(worker.start / 15) * 15;
-            const maxStart = Math.floor((worker.end - duration) / 15) * 15;
+            const maxStart = Math.floor((getTaskSchedulingEnd(worker) - duration) / 15) * 15;
             const newStart = Math.min(maxStart, Math.max(minStart, task.s + delta));
             await requestTaskMove(workerIndex, taskIndex, newStart);
         });
@@ -758,13 +814,14 @@ function render(workers, fr, open, close) {
 
     const fBody = document.querySelector('#fittingRoomTable tbody');
     fBody.innerHTML = '';
-    fr.forEach(b => {
+    fr.forEach((b, blockIndex) => {
         fBody.insertAdjacentHTML('beforeend', `<tr class="${b.isClosing ? 'highlight-row' : ''}">
-        <td><strong>${b.time}</strong></td>
-        <td>${escapeHTML(b.g)}</td>
-        <td>${escapeHTML(b.s)} ${b.isClosing ? '<span class="closing-badge">CLOSING</span>' : ''}</td>
+        <td><div class="fitting-time-cell"><strong>${b.time}</strong>${b.isClosing ? '<span class="closing-badge">Closing</span>' : ''}</div></td>
+        <td><select class="fitting-assignment-select" data-block-index="${blockIndex}" data-role="g" aria-label="Greeter for ${b.time}">${fittingRoomWorkerOptions(workers, b, 'g')}</select></td>
+        <td><select class="fitting-assignment-select" data-block-index="${blockIndex}" data-role="s" aria-label="Sorter for ${b.time}">${fittingRoomWorkerOptions(workers, b, 's')}</select></td>
     </tr>`);
     });
+    setupFittingRoomAssignmentEditing();
 }
 
 window.onload = () => samples.forEach(s => addWorkerRow(s));

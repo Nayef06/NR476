@@ -356,6 +356,50 @@ th {
     letter-spacing: 0.05em;
 }
 
+.fitting-time-cell {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
+}
+
+.fitting-time-cell strong {
+    white-space: nowrap;
+}
+
+.fitting-time-cell .closing-badge {
+    flex: 0 0 auto;
+    margin-left: 0;
+    padding: 2px 5px;
+    border: 1px solid #dedede;
+    border-radius: 999px;
+    color: #4a4a4a;
+    background: #f0f0f0;
+    font-size: 0.5rem;
+    line-height: 1.2;
+}
+
+.fitting-assignment-select {
+    width: 100%;
+    min-width: 0;
+    padding: 4px 18px 4px 6px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--text);
+    background-color: transparent;
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.fitting-assignment-select:hover,
+.fitting-assignment-select:focus {
+    border-color: #bdbdbd;
+    outline: none;
+    background-color: #fff;
+}
+
 .highlight-row {
     background: var(--row-hover) !important;
 }
