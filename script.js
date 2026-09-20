@@ -222,13 +222,28 @@ function createEvenBreakSchedule(worker, plan, occupied, isCloser, closingStart)
     return bestSchedule || [];
 }
 
+function scheduleAllWorkerBreaks(workers, close) {
+    const closingTimeMins = close + 60;
+    const closingStart = closingTimeMins - 120;
+    const closer = workers.find(worker => worker.end === closingTimeMins) || workers[workers.length - 1];
+    const occupied = [];
+
+    workers.forEach(worker => {
+        worker.tasks = createEvenBreakSchedule(
+            worker,
+            getBreakPlan(worker.dur),
+            occupied,
+            worker === closer,
+            closingStart
+        );
+        occupied.push(...worker.tasks.map(task => ({ s: task.s, e: task.e })));
+    });
+}
+
 function generate() {
     const open = timeToMins(document.getElementById('storeOpen').value);
     let close = timeToMins(document.getElementById('storeClose').value);
     if (close < open) close += 1440;
-    const closingTimeMins = close + 60;
-    const closingStart = closingTimeMins - 120;
-
     const workers = [];
     document.querySelectorAll('.worker-row').forEach(row => {
         const name = row.querySelector('.w-name').value.trim();
@@ -238,25 +253,19 @@ function generate() {
         let s = timeToMins(startValue);
         let e = timeToMins(endValue);
         if (e < s) e += 1440;
-        workers.push({ name, start: s, end: e, dur: (e - s) / 60, tasks: [] });
+        workers.push({
+            name,
+            start: s,
+            end: e,
+            dur: (e - s) / 60,
+            tasks: [],
+            editorId: row.id
+        });
     });
-
-    const closer = workers.find(w => w.end === closingTimeMins) || workers[workers.length - 1];
-    const globalOccupied = [];
 
     // Place breaks so every working interval is as even as 15-minute snapping allows.
     // Other employees' breaks are used as a light tie-breaker so spacing stays primary.
-    workers.forEach(worker => {
-        const plan = getBreakPlan(worker.dur);
-        worker.tasks = createEvenBreakSchedule(
-            worker,
-            plan,
-            globalOccupied,
-            worker === closer,
-            closingStart
-        );
-        globalOccupied.push(...worker.tasks.map(task => ({ s: task.s, e: task.e })));
-    });
+    scheduleAllWorkerBreaks(workers, close);
 
     const fittingRoomBlocks = createFittingRoomRotation(workers, open, close);
     currentSchedule = { workers, fittingRoomBlocks, open, close };
@@ -345,6 +354,172 @@ function getWorkIntervals(worker) {
     return intervals;
 }
 
+function getFittingRoomIntervals(worker, fittingRoomBlocks) {
+    const intervals = [];
+
+    fittingRoomBlocks.forEach(block => {
+        let role = null;
+        if (block.g === worker.name) role = 'Greeter';
+        if (block.s === worker.name) role = 'Sorter';
+        if (!role) return;
+
+        const previous = intervals[intervals.length - 1];
+        if (previous && previous.end === block.start && previous.role === role) {
+            previous.end = block.end;
+        } else {
+            intervals.push({ start: block.start, end: block.end, role });
+        }
+    });
+
+    return intervals;
+}
+
+function minsToInputTime(minutes) {
+    const normalized = ((minutes % 1440) + 1440) % 1440;
+    const hours = Math.floor(normalized / 60).toString().padStart(2, '0');
+    const mins = (normalized % 60).toString().padStart(2, '0');
+    return `${hours}:${mins}`;
+}
+
+function parseClockValue(value, referenceMinutes) {
+    const match = value.trim().toLowerCase().match(/^(\d{1,2})(?::(\d{2}))?\s*([ap]m)?$/);
+    if (!match) return null;
+
+    let hours = Number(match[1]);
+    const minutes = Number(match[2] || 0);
+    const period = match[3];
+    if (minutes > 59) return null;
+
+    if (period) {
+        if (hours < 1 || hours > 12) return null;
+        hours = hours % 12 + (period === 'pm' ? 12 : 0);
+    } else if (hours > 23) {
+        return null;
+    }
+
+    let result = hours * 60 + minutes;
+    while (result - referenceMinutes > 720) result -= 1440;
+    while (referenceMinutes - result > 720) result += 1440;
+    return result;
+}
+
+function parseTimeRange(value, startReference, endReference) {
+    const parts = value.split(/\s*[-–—]\s*/);
+    if (parts.length !== 2) return null;
+
+    const start = parseClockValue(parts[0], startReference);
+    let end = parseClockValue(parts[1], endReference);
+    if (start === null || end === null) return null;
+    while (end <= start) end += 1440;
+    return { start, end };
+}
+
+function refreshCurrentSchedule() {
+    if (!currentSchedule) return;
+    currentSchedule.fittingRoomBlocks = createFittingRoomRotation(
+        currentSchedule.workers,
+        currentSchedule.open,
+        currentSchedule.close
+    );
+    render(
+        currentSchedule.workers,
+        currentSchedule.fittingRoomBlocks,
+        currentSchedule.open,
+        currentSchedule.close
+    );
+}
+
+function syncWorkerEditor(worker) {
+    const row = document.getElementById(worker.editorId);
+    if (!row) return;
+    row.querySelector('.w-start').value = minsToInputTime(worker.start);
+    row.querySelector('.w-end').value = minsToInputTime(worker.end);
+}
+
+function commitScheduleTableEdit(element) {
+    if (!currentSchedule) return;
+
+    const workerIndex = Number(element.dataset.workerIndex);
+    const worker = currentSchedule.workers[workerIndex];
+    if (!worker) return;
+
+    if (element.dataset.editKind === 'shift') {
+        const range = parseTimeRange(element.textContent, worker.start, worker.end);
+        if (!range || range.end - range.start > 1440) {
+            refreshCurrentSchedule();
+            return;
+        }
+
+        worker.start = range.start;
+        worker.end = range.end;
+        worker.dur = (worker.end - worker.start) / 60;
+        scheduleAllWorkerBreaks(currentSchedule.workers, currentSchedule.close);
+        syncWorkerEditor(worker);
+        refreshCurrentSchedule();
+        return;
+    }
+
+    const taskType = element.dataset.taskType;
+    const taskIndex = worker.tasks.findIndex(task => task.type === taskType);
+    const task = worker.tasks[taskIndex];
+    if (!task) {
+        refreshCurrentSchedule();
+        return;
+    }
+
+    const range = parseTimeRange(element.textContent, task.s, task.e);
+    if (!range) {
+        refreshCurrentSchedule();
+        return;
+    }
+
+    const start = Math.round(range.start / 15) * 15;
+    const end = Math.round(range.end / 15) * 15;
+    const conflicts = worker.tasks.some((otherTask, otherIndex) => (
+        otherIndex !== taskIndex && start < otherTask.e && end > otherTask.s
+    ));
+    if (end <= start || start < worker.start || end > worker.end || conflicts) {
+        refreshCurrentSchedule();
+        return;
+    }
+
+    task.s = start;
+    task.e = end;
+    worker.tasks.sort((first, second) => first.s - second.s);
+    refreshCurrentSchedule();
+}
+
+function setupScheduleTableEditing() {
+    document.querySelectorAll('.schedule-edit').forEach(element => {
+        element.addEventListener('focus', () => {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            selection.removeAllRanges();
+            selection.addRange(range);
+        });
+
+        element.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                element.dataset.forceCommit = 'true';
+                element.blur();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                element.dataset.cancelEdit = 'true';
+                element.blur();
+            }
+        });
+
+        element.addEventListener('blur', () => {
+            const autoUpdate = document.getElementById('autoUpdateToggle').checked;
+            const shouldCommit = autoUpdate || element.dataset.forceCommit === 'true';
+            if (element.dataset.cancelEdit === 'true' || !shouldCommit) refreshCurrentSchedule();
+            else commitScheduleTableEdit(element);
+        }, { once: true });
+    });
+}
+
 function moveConfirmationsDisabled() {
     try {
         return localStorage.getItem('skipBreakMoveConfirm') === 'true';
@@ -396,17 +571,8 @@ async function requestTaskMove(workerIndex, taskIndex, newStart) {
         const duration = task.e - task.s;
         task.s = newStart;
         task.e = newStart + duration;
-        currentSchedule.fittingRoomBlocks = createFittingRoomRotation(
-            currentSchedule.workers,
-            currentSchedule.open,
-            currentSchedule.close
-        );
-        render(
-            currentSchedule.workers,
-            currentSchedule.fittingRoomBlocks,
-            currentSchedule.open,
-            currentSchedule.close
-        );
+        worker.tasks.sort((first, second) => first.s - second.s);
+        refreshCurrentSchedule();
     }
 
     moveInProgress = false;
@@ -541,9 +707,12 @@ function renderTimeline(workers, fittingRoomBlocks, open, close) {
     const workerRows = workers.map((worker, workerIndex) => {
         const safeName = escapeHTML(worker.name);
         const work = `<div class="timeline-segment work-segment" style="left:${position(worker.start)}%;width:${width(worker.start, worker.end)}%" title="${safeName}: ${minsToCompactTime(worker.start)}–${minsToCompactTime(worker.end)}"></div>`;
+        const fittingRoomIntervals = getFittingRoomIntervals(worker, fittingRoomBlocks).map(interval => (
+            `<span class="timeline-segment fitting-segment" style="left:${position(interval.start)}%;width:${width(interval.start, interval.end)}%" aria-label="${interval.role} in fitting room from ${minsToHour(interval.start)} to ${minsToHour(interval.end)}"></span>`
+        )).join('');
         const workIntervals = getWorkIntervals(worker).map(interval => {
             const duration = formatDuration(interval.end - interval.start);
-            return `<span class="work-gap-label" style="left:${position(interval.start)}%;width:${width(interval.start, interval.end)}%" aria-label="${duration} working from ${minsToTime(interval.start)} to ${minsToTime(interval.end)}">${duration}</span>`;
+            return `<span class="work-gap-label" style="left:${position(interval.start)}%;width:${width(interval.start, interval.end)}%" aria-label="${duration} working from ${minsToTime(interval.start)} to ${minsToTime(interval.end)}"><b>${duration}</b></span>`;
         }).join('');
         const tasks = worker.tasks.map((task, taskIndex) => {
             const isLunch = task.type === 'Lunch';
@@ -553,7 +722,7 @@ function renderTimeline(workers, fittingRoomBlocks, open, close) {
         }).join('');
         return `
             <div class="timeline-label"><strong title="${safeName}">${safeName}</strong><small>${formatDuration(worker.end - worker.start)} · ${minsToCompactTime(worker.start)}–${minsToCompactTime(worker.end)}</small></div>
-            <div class="timeline-track">${work}${workIntervals}${tasks}</div>`;
+            <div class="timeline-track">${work}${fittingRoomIntervals}${workIntervals}${tasks}</div>`;
     }).join('');
 
     timeline.innerHTML = `
@@ -574,25 +743,26 @@ function render(workers, fr, open, close) {
     renderTimeline(workers, fr, open, close);
     const bBody = document.querySelector('#breaksTable tbody');
     bBody.innerHTML = '';
-    workers.forEach(w => {
+    workers.forEach((w, workerIndex) => {
         const b1 = w.tasks.find(t => t.type === 'B1');
         const lunch = w.tasks.find(t => t.type === 'Lunch');
         const b2 = w.tasks.find(t => t.type === 'B2');
         bBody.insertAdjacentHTML('beforeend', `<tr>
-        <td onclick="this.contentEditable=true; this.focus();" onblur="this.contentEditable=false"><strong>${escapeHTML(w.name)}</strong><br><small style="color:#64748b">${minsToCompactTime(w.start)}-${minsToCompactTime(w.end)}</small></td>
-        <td onclick="this.contentEditable=true; this.focus();" onblur="this.contentEditable=false">${b1 ? `<span class="time-tag">${minsToTime(b1.s)}-${minsToTime(b1.e)}</span>` : '—'}</td>
-        <td onclick="this.contentEditable=true; this.focus();" onblur="this.contentEditable=false">${lunch ? `<span class="time-tag">${minsToTime(lunch.s)}-${minsToTime(lunch.e)}</span>` : '—'}</td>
-        <td onclick="this.contentEditable=true; this.focus();" onblur="this.contentEditable=false">${b2 ? `<span class="time-tag">${minsToTime(b2.s)}-${minsToTime(b2.e)}</span>` : '—'}</td>
+        <td><strong>${escapeHTML(w.name)}</strong><br><span class="schedule-edit shift-edit" contenteditable="true" spellcheck="false" data-worker-index="${workerIndex}" data-edit-kind="shift" title="Edit shift and press Enter">${minsToCompactTime(w.start)}-${minsToCompactTime(w.end)}</span></td>
+        <td>${b1 ? `<span class="time-tag schedule-edit" contenteditable="true" spellcheck="false" data-worker-index="${workerIndex}" data-task-type="B1" title="Edit break and press Enter">${minsToTime(b1.s)}-${minsToTime(b1.e)}</span>` : '—'}</td>
+        <td>${lunch ? `<span class="time-tag schedule-edit" contenteditable="true" spellcheck="false" data-worker-index="${workerIndex}" data-task-type="Lunch" title="Edit lunch and press Enter">${minsToTime(lunch.s)}-${minsToTime(lunch.e)}</span>` : '—'}</td>
+        <td>${b2 ? `<span class="time-tag schedule-edit" contenteditable="true" spellcheck="false" data-worker-index="${workerIndex}" data-task-type="B2" title="Edit break and press Enter">${minsToTime(b2.s)}-${minsToTime(b2.e)}</span>` : '—'}</td>
     </tr>`);
     });
+    setupScheduleTableEditing();
 
     const fBody = document.querySelector('#fittingRoomTable tbody');
     fBody.innerHTML = '';
     fr.forEach(b => {
         fBody.insertAdjacentHTML('beforeend', `<tr class="${b.isClosing ? 'highlight-row' : ''}">
-        <td onclick="this.contentEditable=true; this.focus();" onblur="this.contentEditable=false"><strong>${b.time}</strong></td>
-        <td onclick="this.contentEditable=true; this.focus();" onblur="this.contentEditable=false">${escapeHTML(b.g)}</td>
-        <td onclick="this.contentEditable=true; this.focus();" onblur="this.contentEditable=false">${escapeHTML(b.s)} ${b.isClosing ? '<span class="closing-badge">CLOSING</span>' : ''}</td>
+        <td><strong>${b.time}</strong></td>
+        <td>${escapeHTML(b.g)}</td>
+        <td>${escapeHTML(b.s)} ${b.isClosing ? '<span class="closing-badge">CLOSING</span>' : ''}</td>
     </tr>`);
     });
 }

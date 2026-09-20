@@ -40,13 +40,21 @@
                     <span><i class="legend-swatch work"></i>Working</span>
                     <span><i class="legend-swatch break"></i>Break</span>
                     <span><i class="legend-swatch lunch"></i>Lunch</span>
+                    <span><i class="legend-swatch fitting"></i>Fitting room</span>
                     <span><i class="legend-swatch uncovered"></i>Nobody on floor</span>
                 </div>
                 <div id="shiftTimeline" class="shift-timeline"></div>
             </section>
             <div class="results-grid">
                 <div>
-                    <h2>Floor & Breaks</h2>
+                    <div class="table-section-heading">
+                        <h2>Floor & Breaks</h2>
+                        <label class="auto-update-toggle" title="When off, press Enter to apply a table edit">
+                            <input type="checkbox" id="autoUpdateToggle" checked>
+                            <span aria-hidden="true"></span>
+                            Auto update
+                        </label>
+                    </div>
                     <table id="breaksTable">
                         <thead>
                             <tr>

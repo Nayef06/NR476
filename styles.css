@@ -262,6 +262,89 @@ th {
     display: inline-block;
 }
 
+.table-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.auto-update-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    cursor: pointer;
+}
+
+.auto-update-toggle input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+.auto-update-toggle span {
+    position: relative;
+    width: 28px;
+    height: 16px;
+    border-radius: 999px;
+    background: #c9c9c9;
+    transition: background 0.18s ease;
+}
+
+.auto-update-toggle span::after {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    content: '';
+    transition: transform 0.18s ease;
+}
+
+.auto-update-toggle input:checked + span {
+    background: #222;
+}
+
+.auto-update-toggle input:checked + span::after {
+    transform: translateX(12px);
+}
+
+.auto-update-toggle input:focus-visible + span {
+    outline: 2px solid #777;
+    outline-offset: 2px;
+}
+
+.schedule-edit {
+    cursor: text;
+    outline: none;
+}
+
+.schedule-edit:hover,
+.schedule-edit:focus {
+    box-shadow: inset 0 0 0 1px #a8a8a8;
+}
+
+.schedule-edit:focus {
+    background: #fff;
+}
+
+.shift-edit {
+    display: inline-block;
+    padding: 1px 3px;
+    border-radius: 4px;
+    color: #64748b;
+    font-size: 0.75rem;
+}
+
 .closing-badge {
     background: #000;
     color: #fff;
@@ -348,6 +431,11 @@ th {
 
 .legend-swatch.lunch {
     background: var(--lunch);
+}
+
+.legend-swatch.fitting {
+    border: 1px solid #4f477f;
+    background: repeating-linear-gradient(135deg, #211d38 0, #211d38 3px, #574c91 3px, #574c91 6px);
 }
 
 .legend-swatch.uncovered {
@@ -474,7 +562,7 @@ th {
 .work-gap-label {
     position: absolute;
     top: 0;
-    z-index: 1;
+    z-index: 2;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -487,14 +575,42 @@ th {
     line-height: 1;
     text-align: center;
     text-overflow: clip;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
+    text-shadow: none;
     white-space: nowrap;
+    pointer-events: none;
+}
+
+.work-gap-label b {
+    display: inline-block;
+    max-width: calc(100% - 4px);
+    overflow: hidden;
+    padding: 0 2px;
+    border: 0;
+    border-radius: 0;
+    color: #fff;
+    background: transparent;
+    box-shadow: none;
+    font: inherit;
+    font-weight: 800;
+    text-shadow: none;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+
+.fitting-segment {
+    top: 3px;
+    z-index: 1;
+    height: 15px;
+    border-right: 1px solid rgba(255, 255, 255, 0.75);
+    border-left: 1px solid rgba(255, 255, 255, 0.75);
+    border-radius: 2px;
+    background: repeating-linear-gradient(135deg, rgba(29, 25, 52, 0.98) 0, rgba(29, 25, 52, 0.98) 5px, rgba(83, 71, 142, 0.96) 5px, rgba(83, 71, 142, 0.96) 9px);
     pointer-events: none;
 }
 
 .task-segment {
     top: 1px;
-    z-index: 2;
+    z-index: 3;
     height: 19px;
     border: 2px solid #fff;
     background: var(--break);
