@@ -470,6 +470,10 @@ th {
     font-size: 0.76rem;
 }
 
+.mobile-timeline-help {
+    display: none;
+}
+
 .coverage-status {
     flex: 0 0 auto;
     padding: 5px 9px;
@@ -763,6 +767,10 @@ th {
     text-align: center;
 }
 
+.mobile-timeline-controls {
+    display: none;
+}
+
 .drag-time-tooltip {
     position: fixed;
     z-index: 1001;
@@ -904,48 +912,321 @@ th {
 /* Mobile-specific layout tweaks */
 @media (max-width: 600px) {
     body {
-        padding: 10px;
-        /* allow horizontal scroll on the page if something still slips out */
-        overflow-x: visible;
+        padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+        overflow-x: hidden;
     }
+
     .container {
+        width: 100%;
         padding: 12px;
-        overflow-x: auto; /* let wide children scroll inside */
+        overflow: visible;
+        border-radius: 12px;
     }
+
     header {
         flex-direction: column;
         align-items: flex-start;
     }
+
     .section-heading {
         align-items: flex-start;
         flex-direction: column;
         gap: 7px;
     }
+
     .config-grid {
-        grid-template-columns: 1fr;
-        gap: 16px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        max-width: none;
     }
+
+    input,
+    .hour-picker,
+    button,
+    .fitting-assignment-select {
+        min-height: 44px;
+    }
+
     .worker-row {
-        grid-template-columns: 1fr;
-        gap: 12px;
+        position: relative;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        padding: 12px;
+        margin-bottom: 10px;
     }
-    .button-group {
+
+    .worker-row .input-group {
+        display: flex;
         flex-direction: column;
         align-items: stretch;
+        gap: 5px;
     }
+
+    .worker-row .input-group:first-child {
+        grid-column: 1 / -1;
+        padding-right: 46px;
+    }
+
+    .worker-row .btn-remove {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 44px;
+        height: 44px;
+    }
+
+    .button-group {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
     .btn-add,
     .btn-gen,
     .btn-print {
         width: 100%;
     }
+
     .results-grid {
         grid-template-columns: 1fr;
+        gap: 24px;
     }
+
     table {
         display: block;
-        width: auto;               /* shrink-to-fit content so inner scroll works */
-        max-width: none;
+        width: 100%;
+        overflow: visible;
+        border: 0;
+        border-radius: 0;
+        white-space: normal;
+    }
+
+    table thead {
+        display: none;
+    }
+
+    table tbody {
+        display: grid;
+        gap: 10px;
+    }
+
+    table tbody tr {
+        display: grid;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+    }
+
+    table tbody td {
+        min-width: 0;
+        padding: 10px;
+        border-right: 1px solid var(--border);
+        border-bottom: 0;
+    }
+
+    table tbody td::before {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--text-secondary);
+        content: attr(data-label);
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        line-height: 1;
+        text-transform: uppercase;
+    }
+
+    #breaksTable tbody tr {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    #breaksTable tbody td:first-child {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-column: 1 / -1;
+        align-items: center;
+        gap: 4px 10px;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    #breaksTable tbody td:first-child::before {
+        grid-column: 1 / -1;
+        margin-bottom: 0;
+    }
+
+    #breaksTable tbody td:first-child br {
+        display: none;
+    }
+
+    #breaksTable tbody td:nth-child(4) {
+        border-right: 0;
+    }
+
+    .schedule-edit {
+        min-height: 44px;
+    }
+
+    .time-tag,
+    .shift-edit {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        padding: 8px 5px;
+        font-size: 0.76rem;
+        text-align: center;
+    }
+
+    .schedule-edit.mobile-readonly {
+        cursor: default;
+        user-select: text;
+    }
+
+    #fittingRoomTable tbody tr {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #fittingRoomTable tbody td:first-child {
+        grid-column: 1 / -1;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    #fittingRoomTable tbody td:last-child {
+        border-right: 0;
+    }
+
+    .fitting-assignment-select {
+        padding: 8px 26px 8px 8px;
+        font-size: 0.9rem;
+    }
+
+    .timeline-section {
+        padding: 12px;
+    }
+
+    .timeline-legend {
+        gap: 8px 12px;
+    }
+
+    .timeline-scroll {
         overflow-x: auto;
-        white-space: nowrap;
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .timeline-grid {
+        grid-template-columns: minmax(610px, 1fr);
+        min-width: 610px;
+        row-gap: 5px;
+    }
+
+    .timeline-label,
+    .timeline-axis-label {
+        position: sticky;
+        left: 0;
+        z-index: 6;
+        width: min(100%, calc(100vw - 64px));
+        padding: 3px 4px;
+        background: #fcfcfc;
+    }
+
+    .timeline-label {
+        margin-top: 5px;
+    }
+
+    .timeline-label strong {
+        font-size: 0.8rem;
+    }
+
+    .timeline-axis-label {
+        padding-top: 0;
+    }
+
+    .desktop-timeline-help {
+        display: none;
+    }
+
+    .mobile-timeline-help {
+        display: inline;
+    }
+
+    .timeline-track {
+        height: 36px;
+    }
+
+    .coverage-track,
+    .coverage-segment {
+        height: 32px;
+    }
+
+    .work-segment,
+    .fitting-segment {
+        top: 7px;
+        height: 22px;
+    }
+
+    .work-gap-label {
+        height: 36px;
+    }
+
+    .task-segment {
+        top: 2px;
+        height: 32px;
+        touch-action: pan-x pan-y;
+    }
+
+    .task-segment::after {
+        position: absolute;
+        inset: -2px -10px;
+        content: '';
+    }
+
+    .task-segment.mobile-selected {
+        z-index: 5;
+        outline: 3px solid #fff;
+        box-shadow: 0 0 0 3px #262626;
+    }
+
+    .mobile-timeline-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        margin-top: 12px;
+        padding: 10px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+    }
+
+    .mobile-task-selection {
+        min-height: 20px;
+        color: var(--text-secondary);
+        font-size: 0.76rem;
+        font-weight: 600;
+    }
+
+    .mobile-timeline-controls > div {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .mobile-timeline-controls button {
+        padding: 8px;
+        color: #fff;
+        background: var(--primary);
+    }
+
+    .mobile-timeline-controls button:disabled {
+        color: #999;
+        background: #ededed;
+        cursor: default;
+    }
+
+    .site-footer {
+        padding: 16px 12px;
     }
 }

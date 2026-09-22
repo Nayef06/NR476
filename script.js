@@ -589,7 +589,16 @@ function commitScheduleTableEdit(element) {
 }
 
 function setupScheduleTableEditing() {
+    const isSmallViewport = window.matchMedia('(max-width: 600px)').matches;
+
     document.querySelectorAll('.schedule-edit').forEach(element => {
+        if (isSmallViewport) {
+            element.setAttribute('contenteditable', 'false');
+            element.removeAttribute('title');
+            element.classList.add('mobile-readonly');
+            return;
+        }
+
         element.addEventListener('focus', () => {
             const selection = window.getSelection();
             const range = document.createRange();
@@ -728,13 +737,18 @@ async function requestTaskMove(workerIndex, taskIndex, newStart) {
 
 function setupTimelineDragging(rangeStart, range, position) {
     const tooltip = document.getElementById('dragTimeTooltip');
+    const mobileControls = document.querySelector('.mobile-timeline-controls');
+    const mobileSelection = mobileControls?.querySelector('.mobile-task-selection');
+    const mobileStepButtons = mobileControls
+        ? Array.from(mobileControls.querySelectorAll('[data-task-step]'))
+        : [];
 
     document.querySelectorAll('.task-segment').forEach(segment => {
         const workerIndex = Number(segment.dataset.workerIndex);
         const taskIndex = Number(segment.dataset.taskIndex);
 
         segment.addEventListener('pointerdown', event => {
-            if (event.button !== 0 || !currentSchedule || moveInProgress) return;
+            if (event.pointerType === 'touch' || event.button !== 0 || !currentSchedule || moveInProgress) return;
 
             const worker = currentSchedule.workers[workerIndex];
             const task = worker.tasks[taskIndex];
@@ -795,6 +809,25 @@ function setupTimelineDragging(rangeStart, range, position) {
             window.addEventListener('pointercancel', cancelDrag);
         });
 
+        segment.addEventListener('click', () => {
+            if (!window.matchMedia('(max-width: 600px)').matches || !currentSchedule || !mobileControls) return;
+
+            const worker = currentSchedule.workers[workerIndex];
+            const task = worker?.tasks[taskIndex];
+            if (!task) return;
+
+            document.querySelectorAll('.task-segment.mobile-selected').forEach(selected => {
+                selected.classList.remove('mobile-selected');
+                selected.setAttribute('aria-pressed', 'false');
+            });
+            segment.classList.add('mobile-selected');
+            segment.setAttribute('aria-pressed', 'true');
+            mobileControls.dataset.workerIndex = workerIndex;
+            mobileControls.dataset.taskIndex = taskIndex;
+            mobileSelection.textContent = `${worker.name} · ${taskDisplayName(task)} · ${minsToTime(task.s)}–${minsToTime(task.e)}`;
+            mobileStepButtons.forEach(button => { button.disabled = false; });
+        });
+
         segment.addEventListener('keydown', async event => {
             if (!['ArrowLeft', 'ArrowRight'].includes(event.key) || !currentSchedule) return;
             event.preventDefault();
@@ -806,6 +839,19 @@ function setupTimelineDragging(rangeStart, range, position) {
             const maxStart = Math.floor((getTaskSchedulingEnd(worker) - duration) / 15) * 15;
             const newStart = Math.min(maxStart, Math.max(minStart, task.s + delta));
             await requestTaskMove(workerIndex, taskIndex, newStart);
+        });
+    });
+
+    mobileStepButtons.forEach(button => {
+        button.addEventListener('click', async () => {
+            if (!currentSchedule || moveInProgress) return;
+
+            const workerIndex = Number(mobileControls.dataset.workerIndex);
+            const taskIndex = Number(mobileControls.dataset.taskIndex);
+            const task = currentSchedule.workers[workerIndex]?.tasks[taskIndex];
+            if (!task) return;
+
+            await requestTaskMove(workerIndex, taskIndex, task.s + Number(button.dataset.taskStep));
         });
     });
 }
@@ -864,8 +910,8 @@ function renderTimeline(workers, fittingRoomBlocks, open, close) {
         const tasks = worker.tasks.map((task, taskIndex) => {
             const isLunch = task.type === 'Lunch';
             const label = taskDisplayName(task);
-            const ariaLabel = `Move ${label} for ${safeName}. Currently ${minsToTime(task.s)} to ${minsToTime(task.e)}. Drag or use left and right arrow keys.`;
-            return `<div class="timeline-segment task-segment ${isLunch ? 'lunch' : ''}" data-worker-index="${workerIndex}" data-task-index="${taskIndex}" tabindex="0" role="button" aria-grabbed="false" aria-label="${ariaLabel}" style="left:${position(task.s)}%;width:${width(task.s, task.e)}%" title="Drag ${label}: ${minsToTime(task.s)}–${minsToTime(task.e)}"></div>`;
+            const ariaLabel = `Move ${label} for ${safeName}. Currently ${minsToTime(task.s)} to ${minsToTime(task.e)}. Drag, use left and right arrow keys, or select it for the mobile step controls.`;
+            return `<div class="timeline-segment task-segment ${isLunch ? 'lunch' : ''}" data-worker-index="${workerIndex}" data-task-index="${taskIndex}" tabindex="0" role="button" aria-grabbed="false" aria-pressed="false" aria-label="${ariaLabel}" style="left:${position(task.s)}%;width:${width(task.s, task.e)}%" title="Drag ${label}: ${minsToTime(task.s)}–${minsToTime(task.e)}"></div>`;
         }).join('');
         return `
             <div class="timeline-label"><strong title="${safeName}">${safeName}</strong><small>${formatDuration(worker.end - worker.start)} · ${minsToCompactTime(worker.start)}–${minsToCompactTime(worker.end)}</small></div>
@@ -881,6 +927,13 @@ function renderTimeline(workers, fittingRoomBlocks, open, close) {
                 <div class="timeline-track coverage-track">${coverageSegments}</div>
                 ${workerRows}
             </div>
+        </div>
+        <div class="mobile-timeline-controls" aria-label="Selected break controls">
+            <span class="mobile-task-selection" aria-live="polite">Tap a break or lunch to adjust it.</span>
+            <div>
+                <button type="button" data-task-step="-15" disabled>−15 min</button>
+                <button type="button" data-task-step="15" disabled>+15 min</button>
+            </div>
         </div>`;
     setupTimelineDragging(rangeStart, range, position);
 }
@@ -895,10 +948,10 @@ function render(workers, fr, open, close) {
         const lunch = w.tasks.find(t => t.type === 'Lunch');
         const b2 = w.tasks.find(t => t.type === 'B2');
         bBody.insertAdjacentHTML('beforeend', `<tr>
-        <td><strong>${escapeHTML(w.name)}</strong><br><span class="schedule-edit shift-edit" contenteditable="true" spellcheck="false" data-worker-index="${workerIndex}" data-edit-kind="shift" title="Edit shift and press Enter">${minsToCompactTime(w.start)}-${minsToCompactTime(w.end)}</span></td>
-        <td>${b1 ? `<span class="time-tag schedule-edit" contenteditable="true" spellcheck="false" data-worker-index="${workerIndex}" data-task-type="B1" title="Edit break and press Enter">${minsToTime(b1.s)}-${minsToTime(b1.e)}</span>` : '—'}</td>
-        <td>${lunch ? `<span class="time-tag schedule-edit" contenteditable="true" spellcheck="false" data-worker-index="${workerIndex}" data-task-type="Lunch" title="Edit lunch and press Enter">${minsToTime(lunch.s)}-${minsToTime(lunch.e)}</span>` : '—'}</td>
-        <td>${b2 ? `<span class="time-tag schedule-edit" contenteditable="true" spellcheck="false" data-worker-index="${workerIndex}" data-task-type="B2" title="Edit break and press Enter">${minsToTime(b2.s)}-${minsToTime(b2.e)}</span>` : '—'}</td>
+        <td data-label="Worker / Shift"><strong>${escapeHTML(w.name)}</strong><br><span class="schedule-edit shift-edit" contenteditable="true" spellcheck="false" data-worker-index="${workerIndex}" data-edit-kind="shift" title="Edit shift and press Enter">${minsToCompactTime(w.start)}-${minsToCompactTime(w.end)}</span></td>
+        <td data-label="Break 1">${b1 ? `<span class="time-tag schedule-edit" contenteditable="true" spellcheck="false" data-worker-index="${workerIndex}" data-task-type="B1" title="Edit break and press Enter">${minsToTime(b1.s)}-${minsToTime(b1.e)}</span>` : '—'}</td>
+        <td data-label="Lunch">${lunch ? `<span class="time-tag schedule-edit" contenteditable="true" spellcheck="false" data-worker-index="${workerIndex}" data-task-type="Lunch" title="Edit lunch and press Enter">${minsToTime(lunch.s)}-${minsToTime(lunch.e)}</span>` : '—'}</td>
+        <td data-label="Break 2">${b2 ? `<span class="time-tag schedule-edit" contenteditable="true" spellcheck="false" data-worker-index="${workerIndex}" data-task-type="B2" title="Edit break and press Enter">${minsToTime(b2.s)}-${minsToTime(b2.e)}</span>` : '—'}</td>
     </tr>`);
     });
     setupScheduleTableEditing();
@@ -907,9 +960,9 @@ function render(workers, fr, open, close) {
     fBody.innerHTML = '';
     fr.forEach((b, blockIndex) => {
         fBody.insertAdjacentHTML('beforeend', `<tr class="${b.isClosing ? 'highlight-row' : ''}">
-        <td><div class="fitting-time-cell"><strong>${b.time}</strong>${b.isClosing ? '<span class="closing-badge">Closing</span>' : ''}</div></td>
-        <td class="${b.g === 'Manager' ? 'manager-assignment-cell' : ''}"><select class="fitting-assignment-select" data-block-index="${blockIndex}" data-role="g" aria-label="Greeter for ${b.time}">${fittingRoomWorkerOptions(workers, b, 'g')}</select></td>
-        <td class="${b.s === 'Manager' ? 'manager-assignment-cell' : ''}"><select class="fitting-assignment-select" data-block-index="${blockIndex}" data-role="s" aria-label="Sorter for ${b.time}">${fittingRoomWorkerOptions(workers, b, 's')}</select></td>
+        <td data-label="Time"><div class="fitting-time-cell"><strong>${b.time}</strong>${b.isClosing ? '<span class="closing-badge">Closing</span>' : ''}</div></td>
+        <td data-label="Greeter" class="${b.g === 'Manager' ? 'manager-assignment-cell' : ''}"><select class="fitting-assignment-select" data-block-index="${blockIndex}" data-role="g" aria-label="Greeter for ${b.time}">${fittingRoomWorkerOptions(workers, b, 'g')}</select></td>
+        <td data-label="Sorter" class="${b.s === 'Manager' ? 'manager-assignment-cell' : ''}"><select class="fitting-assignment-select" data-block-index="${blockIndex}" data-role="s" aria-label="Sorter for ${b.time}">${fittingRoomWorkerOptions(workers, b, 's')}</select></td>
     </tr>`);
     });
     setupFittingRoomAssignmentEditing();
@@ -918,6 +971,9 @@ function render(workers, fr, open, close) {
 window.addEventListener('load', () => {
     setupHourPicker('storeOpen', '10:00');
     setupHourPicker('storeClose', '21:00');
+    window.matchMedia('(max-width: 600px)').addEventListener('change', () => {
+        if (currentSchedule) renderCurrentSchedule();
+    });
     const workers = loadSavedWorkers();
     (workers === null ? samples : workers).forEach(worker => addWorkerRow(worker, false));
     ensureNewWorkerRow();
