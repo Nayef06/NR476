@@ -24,8 +24,9 @@
         <div class="button-group no-print">
             <button class="btn-add" onclick="addWorkerRow()">+ Add Worker</button>
             <button class="btn-add" onclick="clearWorkers()" title="Remove all worker entries">× Clear All Workers</button>
+            <button class="btn-add" onclick="useSampleWorkers()" title="Replace worker entries with sample workers">Use Sample Workers</button>
         </div>
-        <button class="btn-gen no-print" onclick="generate()">Generate Optimized Schedule</button>
+        <button class="btn-gen no-print" onclick="generate()">Generate Schedule</button>
 
         <div id="results" style="display:none;">
             <section class="timeline-section" aria-labelledby="timelineTitle">
@@ -49,7 +50,7 @@
                 <div>
                     <div class="table-section-heading">
                         <h2>Floor & Breaks</h2>
-                        <label class="auto-update-toggle" title="When off, press Enter to apply a table edit">
+                        <label class="auto-update-toggle" title="When off, manual changes will not recalculate other breaks or fitting-room assignments">
                             <input type="checkbox" id="autoUpdateToggle" checked>
                             <span aria-hidden="true"></span>
                             Auto update

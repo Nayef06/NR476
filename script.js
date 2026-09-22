@@ -4,6 +4,7 @@ const samples = [
     { n: "Robert", s: "13:00", e: "22:00" }, { n: "Patricia", s: "14:00", e: "22:00" },
     { n: "Michael", s: "16:00", e: "22:00" }, { n: "Barbara", s: "17:00", e: "22:00" }
 ];
+const WORKERS_STORAGE_KEY = 'nordy-workers';
 
 let currentSchedule = null;
 let moveInProgress = false;
@@ -39,15 +40,57 @@ function formatDuration(minutes) {
     return `${hours ? `${hours}h` : ''}${hours && mins ? ' ' : ''}${mins ? `${mins}m` : ''}` || '0m';
 }
 
-function addWorkerRow(data = { n: '', s: '', e: '' }) {
+function getWorkerEntries() {
+    return Array.from(document.querySelectorAll('.worker-row')).map(row => ({
+        n: row.querySelector('.w-name').value,
+        s: row.querySelector('.w-start').value,
+        e: row.querySelector('.w-end').value
+    }));
+}
+
+function saveWorkers() {
+    try {
+        localStorage.setItem(WORKERS_STORAGE_KEY, JSON.stringify(getWorkerEntries()));
+    } catch (error) {
+        console.warn('Unable to save workers.', error);
+    }
+}
+
+function loadSavedWorkers() {
+    try {
+        const saved = localStorage.getItem(WORKERS_STORAGE_KEY);
+        if (saved === null) return null;
+
+        const workers = JSON.parse(saved);
+        if (!Array.isArray(workers)) return null;
+
+        return workers.filter(worker => (
+            worker
+            && typeof worker.n === 'string'
+            && typeof worker.s === 'string'
+            && typeof worker.e === 'string'
+        ));
+    } catch (error) {
+        console.warn('Unable to load saved workers.', error);
+        return null;
+    }
+}
+
+function addWorkerRow(data = { n: '', s: '', e: '' }, shouldSave = true) {
     const id = Math.random().toString(36).substring(2, 9);
     document.getElementById('workersContainer').insertAdjacentHTML('beforeend', `
     <div class="worker-row" id="${id}">
         <div class="input-group"><label>Name</label><input type="text" class="w-name" value="${escapeHTML(data.n)}"></div>
         <div class="input-group"><label>Start</label><input type="time" class="w-start" value="${escapeHTML(data.s)}"></div>
         <div class="input-group"><label>End</label><input type="time" class="w-end" value="${escapeHTML(data.e)}"></div>
-        <button class="btn-remove" aria-label="Remove worker" onclick="document.getElementById('${id}').remove()">&times;</button>
+        <button class="btn-remove" aria-label="Remove worker" onclick="removeWorkerRow('${id}')">&times;</button>
     </div>`);
+    if (shouldSave) saveWorkers();
+}
+
+function removeWorkerRow(id) {
+    document.getElementById(id)?.remove();
+    saveWorkers();
 }
 
 function clearWorkers() {
@@ -55,6 +98,16 @@ function clearWorkers() {
     document.getElementById('workersContainer').innerHTML = '';
     currentSchedule = null;
     document.getElementById('results').style.display = 'none';
+    saveWorkers();
+}
+
+function useSampleWorkers() {
+    const container = document.getElementById('workersContainer');
+    container.innerHTML = '';
+    samples.forEach(sample => addWorkerRow(sample, false));
+    currentSchedule = null;
+    document.getElementById('results').style.display = 'none';
+    saveWorkers();
 }
 
 function getPreferredFittingRoomCloser(workers, close) {
@@ -115,7 +168,7 @@ function createFittingRoomRotation(workers, open, close) {
                 coversBlock(worker) && !isOnBreak(worker)
             ));
             const choice = chooseWorker(options) || chooseWorker(fallbackOptions);
-            block.s = choice ? choice.name : 'Manager/Lead';
+            block.s = choice ? choice.name : 'Manager';
         }
 
         if (start >= open + 120 && start < close - 120) {
@@ -126,7 +179,7 @@ function createFittingRoomRotation(workers, open, close) {
                 && !isOnBreak(worker)
             ));
             const choice = chooseWorker(options) || chooseWorker(fallbackOptions);
-            block.g = choice ? choice.name : 'Manager/Lead';
+            block.g = choice ? choice.name : 'Manager';
         }
 
         workers.forEach(worker => {
@@ -419,13 +472,12 @@ function parseTimeRange(value, startReference, endReference) {
     return { start, end };
 }
 
-function refreshCurrentSchedule() {
+function autoUpdatesEnabled() {
+    return document.getElementById('autoUpdateToggle')?.checked ?? true;
+}
+
+function renderCurrentSchedule() {
     if (!currentSchedule) return;
-    currentSchedule.fittingRoomBlocks = createFittingRoomRotation(
-        currentSchedule.workers,
-        currentSchedule.open,
-        currentSchedule.close
-    );
     render(
         currentSchedule.workers,
         currentSchedule.fittingRoomBlocks,
@@ -434,11 +486,24 @@ function refreshCurrentSchedule() {
     );
 }
 
+function refreshCurrentSchedule() {
+    if (!currentSchedule) return;
+    if (autoUpdatesEnabled()) {
+        currentSchedule.fittingRoomBlocks = createFittingRoomRotation(
+            currentSchedule.workers,
+            currentSchedule.open,
+            currentSchedule.close
+        );
+    }
+    renderCurrentSchedule();
+}
+
 function syncWorkerEditor(worker) {
     const row = document.getElementById(worker.editorId);
     if (!row) return;
     row.querySelector('.w-start').value = minsToInputTime(worker.start);
     row.querySelector('.w-end').value = minsToInputTime(worker.end);
+    saveWorkers();
 }
 
 function commitScheduleTableEdit(element) {
@@ -451,14 +516,16 @@ function commitScheduleTableEdit(element) {
     if (element.dataset.editKind === 'shift') {
         const range = parseTimeRange(element.textContent, worker.start, worker.end);
         if (!range || range.end - range.start > 1440) {
-            refreshCurrentSchedule();
+            renderCurrentSchedule();
             return;
         }
 
         worker.start = range.start;
         worker.end = range.end;
         worker.dur = (worker.end - worker.start) / 60;
-        scheduleAllWorkerBreaks(currentSchedule.workers, currentSchedule.close);
+        if (autoUpdatesEnabled()) {
+            scheduleAllWorkerBreaks(currentSchedule.workers, currentSchedule.close);
+        }
         syncWorkerEditor(worker);
         refreshCurrentSchedule();
         return;
@@ -468,13 +535,13 @@ function commitScheduleTableEdit(element) {
     const taskIndex = worker.tasks.findIndex(task => task.type === taskType);
     const task = worker.tasks[taskIndex];
     if (!task) {
-        refreshCurrentSchedule();
+        renderCurrentSchedule();
         return;
     }
 
     const range = parseTimeRange(element.textContent, task.s, task.e);
     if (!range) {
-        refreshCurrentSchedule();
+        renderCurrentSchedule();
         return;
     }
 
@@ -484,7 +551,7 @@ function commitScheduleTableEdit(element) {
         otherIndex !== taskIndex && start < otherTask.e && end > otherTask.s
     ));
     if (end <= start || start < worker.start || end > getTaskSchedulingEnd(worker) || conflicts) {
-        refreshCurrentSchedule();
+        renderCurrentSchedule();
         return;
     }
 
@@ -517,9 +584,8 @@ function setupScheduleTableEditing() {
         });
 
         element.addEventListener('blur', () => {
-            const autoUpdate = document.getElementById('autoUpdateToggle').checked;
-            const shouldCommit = autoUpdate || element.dataset.forceCommit === 'true';
-            if (element.dataset.cancelEdit === 'true' || !shouldCommit) refreshCurrentSchedule();
+            const shouldCommit = autoUpdatesEnabled() || element.dataset.forceCommit === 'true';
+            if (element.dataset.cancelEdit === 'true' || !shouldCommit) renderCurrentSchedule();
             else commitScheduleTableEdit(element);
         }, { once: true });
     });
@@ -543,7 +609,7 @@ function fittingRoomWorkerOptions(workers, block, role) {
             Number(first.name.trim().toLowerCase() === 'nayef')
             - Number(second.name.trim().toLowerCase() === 'nayef')
         ));
-    const choices = ['—', 'Manager/Lead', ...availableWorkers.map(worker => worker.name)];
+    const choices = ['—', 'Manager', ...availableWorkers.map(worker => worker.name)];
 
     if (!choices.includes(currentName)) choices.push(currentName);
     return choices.map(choice => (
@@ -561,12 +627,7 @@ function setupFittingRoomAssignmentEditing() {
             if (!block || !['g', 's'].includes(role)) return;
 
             block[role] = select.value;
-            render(
-                currentSchedule.workers,
-                currentSchedule.fittingRoomBlocks,
-                currentSchedule.open,
-                currentSchedule.close
-            );
+            renderCurrentSchedule();
         });
     });
 }
@@ -588,7 +649,10 @@ function confirmTaskMove(worker, task, newStart) {
     const duration = task.e - task.s;
     const label = taskDisplayName(task);
 
-    message.textContent = `Move ${worker.name}'s ${label} from ${minsToTime(task.s)}–${minsToTime(task.e)} to ${minsToTime(newStart)}–${minsToTime(newStart + duration)}? Fitting-room assignments and floor coverage will update.`;
+    const updateNote = autoUpdatesEnabled()
+        ? 'Fitting-room assignments and floor coverage will update.'
+        : 'Floor coverage will update; other breaks and fitting-room assignments will stay unchanged.';
+    message.textContent = `Move ${worker.name}'s ${label} from ${minsToTime(task.s)}–${minsToTime(task.e)} to ${minsToTime(newStart)}–${minsToTime(newStart + duration)}? ${updateNote}`;
     skipCheckbox.checked = false;
     dialog.returnValue = '';
     dialog.showModal();
@@ -824,4 +888,8 @@ function render(workers, fr, open, close) {
     setupFittingRoomAssignmentEditing();
 }
 
-window.onload = () => samples.forEach(s => addWorkerRow(s));
+window.addEventListener('load', () => {
+    const workers = loadSavedWorkers();
+    (workers === null ? samples : workers).forEach(worker => addWorkerRow(worker, false));
+    document.getElementById('workersContainer').addEventListener('input', saveWorkers);
+});
