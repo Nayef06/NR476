@@ -40,6 +40,31 @@ body {
     border: 1px solid var(--border);
 }
 
+.site-footer {
+    max-width: 1240px;
+    margin: 18px auto 0;
+    padding: 18px 22px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1.55;
+    border-top: 1px solid var(--border);
+}
+
+.site-footer strong {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text);
+    font-size: 0.9rem;
+}
+
+.site-footer p {
+    margin: 0 0 8px;
+}
+
+.site-footer p:last-child {
+    margin-bottom: 0;
+}
+
 header {
     display: flex;
     justify-content: space-between;
