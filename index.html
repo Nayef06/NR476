@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scheduler</title>
+    <title>Breaks + Fitting Room Scheduler</title>
     <link rel="icon" href="assets/favicon.ico" type="image/x-icon">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,12 +17,11 @@
 
     <div class="container">
         <div class="config-grid no-print">
-            <div class="input-group"><label>Store Opens</label><input type="time" id="storeOpen" value="10:00"></div>
-            <div class="input-group"><label>Store Closes</label><input type="time" id="storeClose" value="21:00"></div>
+            <div class="input-group"><label for="storeOpen">Store Opens</label><select class="hour-picker" id="storeOpen"></select></div>
+            <div class="input-group"><label for="storeClose">Store Closes</label><select class="hour-picker" id="storeClose"></select></div>
         </div>
         <div id="workersContainer" class="no-print"></div>
         <div class="button-group no-print">
-            <button class="btn-add" onclick="addWorkerRow()">+ Add Worker</button>
             <button class="btn-add" onclick="clearWorkers()" title="Remove all worker entries">× Clear All Workers</button>
             <button class="btn-add" onclick="useSampleWorkers()" title="Replace worker entries with sample workers">Use Sample Workers</button>
         </div>

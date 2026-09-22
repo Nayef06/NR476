@@ -24,6 +24,15 @@ function minsToHour(m) {
     return `${hour}${ampm}`;
 }
 
+function setupHourPicker(id, selectedValue) {
+    const picker = document.getElementById(id);
+    picker.innerHTML = Array.from({ length: 24 }, (_, hour) => {
+        const value = `${hour.toString().padStart(2, '0')}:00`;
+        return `<option value="${value}">${minsToHour(hour * 60)}</option>`;
+    }).join('');
+    picker.value = selectedValue;
+}
+
 function minsToCompactTime(m) {
     return m % 60 === 0 ? minsToHour(m) : minsToTime(m);
 }
@@ -41,11 +50,12 @@ function formatDuration(minutes) {
 }
 
 function getWorkerEntries() {
-    return Array.from(document.querySelectorAll('.worker-row')).map(row => ({
-        n: row.querySelector('.w-name').value,
-        s: row.querySelector('.w-start').value,
-        e: row.querySelector('.w-end').value
-    }));
+    return Array.from(document.querySelectorAll('.worker-row:not([data-new-worker="true"])'))
+        .map(row => ({
+            n: row.querySelector('.w-name').value,
+            s: row.querySelector('.w-start').value,
+            e: row.querySelector('.w-end').value
+        }));
 }
 
 function saveWorkers() {
@@ -76,20 +86,35 @@ function loadSavedWorkers() {
     }
 }
 
-function addWorkerRow(data = { n: '', s: '', e: '' }, shouldSave = true) {
+function addWorkerRow(data = { n: '', s: '', e: '' }, shouldSave = true, isNewWorker = false) {
     const id = Math.random().toString(36).substring(2, 9);
     document.getElementById('workersContainer').insertAdjacentHTML('beforeend', `
-    <div class="worker-row" id="${id}">
+    <div class="worker-row${isNewWorker ? ' new-worker-row' : ''}" id="${id}"${isNewWorker ? ' data-new-worker="true"' : ''}>
         <div class="input-group"><label>Name</label><input type="text" class="w-name" value="${escapeHTML(data.n)}"></div>
         <div class="input-group"><label>Start</label><input type="time" class="w-start" value="${escapeHTML(data.s)}"></div>
         <div class="input-group"><label>End</label><input type="time" class="w-end" value="${escapeHTML(data.e)}"></div>
-        <button class="btn-remove" aria-label="Remove worker" onclick="removeWorkerRow('${id}')">&times;</button>
+        <button class="btn-remove" aria-label="Remove worker" onclick="removeWorkerRow('${id}')"${isNewWorker ? ' hidden' : ''}>&times;</button>
     </div>`);
     if (shouldSave) saveWorkers();
 }
 
+function ensureNewWorkerRow() {
+    if (!document.querySelector('.worker-row[data-new-worker="true"]')) {
+        addWorkerRow({ n: '', s: '', e: '' }, false, true);
+    }
+}
+
+function activateNewWorkerRow(row) {
+    row.removeAttribute('data-new-worker');
+    row.classList.remove('new-worker-row');
+    row.querySelector('.btn-remove').hidden = false;
+    ensureNewWorkerRow();
+    saveWorkers();
+}
+
 function removeWorkerRow(id) {
     document.getElementById(id)?.remove();
+    ensureNewWorkerRow();
     saveWorkers();
 }
 
@@ -98,6 +123,7 @@ function clearWorkers() {
     document.getElementById('workersContainer').innerHTML = '';
     currentSchedule = null;
     document.getElementById('results').style.display = 'none';
+    ensureNewWorkerRow();
     saveWorkers();
 }
 
@@ -105,6 +131,7 @@ function useSampleWorkers() {
     const container = document.getElementById('workersContainer');
     container.innerHTML = '';
     samples.forEach(sample => addWorkerRow(sample, false));
+    ensureNewWorkerRow();
     currentSchedule = null;
     document.getElementById('results').style.display = 'none';
     saveWorkers();
@@ -881,15 +908,22 @@ function render(workers, fr, open, close) {
     fr.forEach((b, blockIndex) => {
         fBody.insertAdjacentHTML('beforeend', `<tr class="${b.isClosing ? 'highlight-row' : ''}">
         <td><div class="fitting-time-cell"><strong>${b.time}</strong>${b.isClosing ? '<span class="closing-badge">Closing</span>' : ''}</div></td>
-        <td><select class="fitting-assignment-select" data-block-index="${blockIndex}" data-role="g" aria-label="Greeter for ${b.time}">${fittingRoomWorkerOptions(workers, b, 'g')}</select></td>
-        <td><select class="fitting-assignment-select" data-block-index="${blockIndex}" data-role="s" aria-label="Sorter for ${b.time}">${fittingRoomWorkerOptions(workers, b, 's')}</select></td>
+        <td class="${b.g === 'Manager' ? 'manager-assignment-cell' : ''}"><select class="fitting-assignment-select" data-block-index="${blockIndex}" data-role="g" aria-label="Greeter for ${b.time}">${fittingRoomWorkerOptions(workers, b, 'g')}</select></td>
+        <td class="${b.s === 'Manager' ? 'manager-assignment-cell' : ''}"><select class="fitting-assignment-select" data-block-index="${blockIndex}" data-role="s" aria-label="Sorter for ${b.time}">${fittingRoomWorkerOptions(workers, b, 's')}</select></td>
     </tr>`);
     });
     setupFittingRoomAssignmentEditing();
 }
 
 window.addEventListener('load', () => {
+    setupHourPicker('storeOpen', '10:00');
+    setupHourPicker('storeClose', '21:00');
     const workers = loadSavedWorkers();
     (workers === null ? samples : workers).forEach(worker => addWorkerRow(worker, false));
-    document.getElementById('workersContainer').addEventListener('input', saveWorkers);
+    ensureNewWorkerRow();
+    document.getElementById('workersContainer').addEventListener('input', event => {
+        const row = event.target.closest('.worker-row');
+        if (row?.dataset.newWorker === 'true') activateNewWorkerRow(row);
+        else saveWorkers();
+    });
 });

@@ -112,7 +112,8 @@ label {
     color: var(--text-secondary);
 }
 
-input {
+input,
+.hour-picker {
     min-width: 0;
     padding: 8px 10px;
     border: 1px solid var(--border);
@@ -123,7 +124,8 @@ input {
     background: #fff;
 }
 
-input:focus {
+input:focus,
+.hour-picker:focus {
     outline: none;
     border-color: #aaa;
     box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.03);
@@ -139,6 +141,11 @@ input:focus {
     background: #fafafa;
     border-radius: 9px;
     border: 1px solid var(--border);
+}
+
+.new-worker-row {
+    background: transparent;
+    border-style: dashed;
 }
 
 .worker-row .input-group {
@@ -423,6 +430,15 @@ th {
     border-color: #bdbdbd;
     outline: none;
     background-color: #fff;
+}
+
+.manager-assignment-cell {
+    background-color: #fff2f2;
+    box-shadow: inset 3px 0 0 #e7a3a3;
+}
+
+.manager-assignment-cell .fitting-assignment-select {
+    color: #8c3a3a;
 }
 
 .highlight-row {
