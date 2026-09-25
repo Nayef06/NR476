@@ -49,6 +49,94 @@ function formatDuration(minutes) {
     return `${hours ? `${hours}h` : ''}${hours && mins ? ' ' : ''}${mins ? `${mins}m` : ''}` || '0m';
 }
 
+function minsToCopyTime(minutes) {
+    const normalized = ((minutes % 1440) + 1440) % 1440;
+    const hour = Math.floor(normalized / 60) % 12 || 12;
+    const mins = normalized % 60;
+    return mins === 0 ? `${hour}` : `${hour}:${mins.toString().padStart(2, '0')}`;
+}
+
+function formatCopyTimeRange(start, end) {
+    return `${minsToCopyTime(start)}-${minsToCopyTime(end)}`;
+}
+
+function formatCopyDuration(minutes) {
+    return minutes % 60 === 0 ? `${minutes / 60} hr` : `${minutes} min`;
+}
+
+async function copyScheduleText(text, buttonId, defaultLabel) {
+    const button = document.getElementById(buttonId);
+
+    try {
+        const copyWithTextArea = () => {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.setAttribute('readonly', '');
+            textArea.style.position = 'fixed';
+            textArea.style.opacity = '0';
+            document.body.appendChild(textArea);
+            textArea.select();
+            const copied = document.execCommand('copy');
+            textArea.remove();
+            if (!copied) throw new Error('Copy command was rejected.');
+        };
+
+        if (navigator.clipboard?.writeText) {
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch (error) {
+                copyWithTextArea();
+            }
+        } else {
+            copyWithTextArea();
+        }
+
+        button.textContent = 'Copied!';
+    } catch (error) {
+        console.warn('Unable to copy schedule.', error);
+        button.textContent = 'Copy failed';
+    }
+
+    window.setTimeout(() => {
+        button.textContent = defaultLabel;
+    }, 1600);
+}
+
+function copyFloorBreaks() {
+    if (!currentSchedule) return;
+
+    const text = currentSchedule.workers.map(worker => {
+        const break1 = worker.tasks.find(task => task.type === 'B1');
+        const lunch = worker.tasks.find(task => task.type === 'Lunch');
+        const break2 = worker.tasks.find(task => task.type === 'B2');
+
+        return [
+            worker.name,
+            formatCopyTimeRange(worker.start, worker.end),
+            break1 ? minsToCopyTime(break1.s) : '',
+            lunch ? formatCopyTimeRange(lunch.s, lunch.e) : '',
+            lunch ? formatCopyDuration(lunch.e - lunch.s) : '',
+            break2 ? minsToCopyTime(break2.s) : ''
+        ].join('\t');
+    }).join('\n');
+
+    copyScheduleText(text, 'copyBreaksButton', 'Copy Schedule');
+}
+
+function copyFittingRoomRotation() {
+    if (!currentSchedule) return;
+
+    const text = currentSchedule.fittingRoomBlocks.map(block => {
+        const time = formatCopyTimeRange(block.start, block.end);
+        const formatAssignment = name => (
+            name && name !== '\u2014' ? `${name} ${time}` : ''
+        );
+        return [formatAssignment(block.g), formatAssignment(block.s)].join('\t');
+    }).join('\n');
+
+    copyScheduleText(text, 'copyFittingRoomButton', 'Copy Rotation');
+}
+
 function getWorkerEntries() {
     return Array.from(document.querySelectorAll('.worker-row:not([data-new-worker="true"])'))
         .map(row => ({

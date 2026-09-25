@@ -301,6 +301,23 @@ th {
     gap: 10px;
 }
 
+.copy-schedule-row {
+    display: flex;
+    margin: 8px 0 0;
+}
+
+.btn-copy {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    color: var(--text);
+    background: #fff;
+    font-size: 0.72rem;
+}
+
+.btn-copy:hover {
+    background: var(--row-hover);
+}
+
 .auto-update-toggle {
     display: inline-flex;
     align-items: center;
@@ -985,6 +1002,10 @@ th {
     .btn-gen,
     .btn-print {
         width: 100%;
+    }
+
+    .btn-copy {
+        min-height: 38px;
     }
 
     .results-grid {
