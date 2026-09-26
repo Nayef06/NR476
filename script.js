@@ -64,6 +64,20 @@ function formatCopyDuration(minutes) {
     return minutes % 60 === 0 ? `${minutes / 60} hr` : `${minutes} min`;
 }
 
+function toggleTimelineVisualizer() {
+    const section = document.querySelector('.timeline-section');
+    const content = document.getElementById('timelineVisualizerContent');
+    const button = document.getElementById('timelineToggleButton');
+    const shouldCollapse = !section.classList.contains('collapsed');
+
+    section.classList.toggle('collapsed', shouldCollapse);
+    content.inert = shouldCollapse;
+    content.setAttribute('aria-hidden', String(shouldCollapse));
+    button.setAttribute('aria-expanded', String(!shouldCollapse));
+    button.setAttribute('aria-label', shouldCollapse ? 'Expand visualizer' : 'Collapse visualizer');
+    button.title = shouldCollapse ? 'Expand visualizer' : 'Collapse visualizer';
+}
+
 async function copyScheduleText(text, buttonId, defaultLabel) {
     const button = document.getElementById(buttonId);
 
@@ -113,10 +127,10 @@ function copyFloorBreaks() {
         return [
             worker.name,
             formatCopyTimeRange(worker.start, worker.end),
-            break1 ? minsToCopyTime(break1.s) : '',
-            lunch ? formatCopyTimeRange(lunch.s, lunch.e) : '',
-            lunch ? formatCopyDuration(lunch.e - lunch.s) : '',
-            break2 ? minsToCopyTime(break2.s) : ''
+            break1 ? minsToCopyTime(break1.s) : 'x',
+            lunch ? formatCopyTimeRange(lunch.s, lunch.e) : 'x',
+            lunch ? formatCopyDuration(lunch.e - lunch.s) : 'x',
+            break2 ? minsToCopyTime(break2.s) : 'x'
         ].join('\t');
     }).join('\n');
 
@@ -126,13 +140,48 @@ function copyFloorBreaks() {
 function copyFittingRoomRotation() {
     if (!currentSchedule) return;
 
-    const text = currentSchedule.fittingRoomBlocks.map(block => {
-        const time = formatCopyTimeRange(block.start, block.end);
-        const formatAssignment = name => (
-            name && name !== '\u2014' ? `${name} ${time}` : ''
-        );
-        return [formatAssignment(block.g), formatAssignment(block.s)].join('\t');
-    }).join('\n');
+    const blocks = currentSchedule.fittingRoomBlocks;
+    const mergeRoleAssignments = role => {
+        const assignments = Array(blocks.length).fill('');
+        let index = 0;
+
+        while (index < blocks.length) {
+            const firstBlock = blocks[index];
+            const name = firstBlock[role];
+
+            if (!name || name === '\u2014') {
+                index += 1;
+                continue;
+            }
+
+            let end = firstBlock.end;
+            let nextIndex = index + 1;
+            while (
+                role === 's'
+                && firstBlock.isClosing
+                && nextIndex < blocks.length
+                && blocks[nextIndex].isClosing
+                && blocks[nextIndex][role] === name
+                && blocks[nextIndex].start === end
+            ) {
+                end = blocks[nextIndex].end;
+                nextIndex += 1;
+            }
+
+            assignments[index] = `${name} ${formatCopyTimeRange(firstBlock.start, end)}`;
+            index = nextIndex;
+        }
+
+        return assignments;
+    };
+
+    const greeters = mergeRoleAssignments('g');
+    const sorters = mergeRoleAssignments('s');
+    const text = blocks
+        .map((block, index) => [greeters[index], sorters[index]])
+        .filter(assignments => assignments.some(Boolean))
+        .map(assignments => assignments.join('\t'))
+        .join('\n');
 
     copyScheduleText(text, 'copyFittingRoomButton', 'Copy Rotation');
 }
@@ -311,16 +360,16 @@ function createFittingRoomRotation(workers, open, close) {
 }
 
 function getBreakPlan(durationHours) {
-    if (durationHours >= 9) {
+    if (durationHours > 8) {
         return [{ d: 15, n: 'B1' }, { d: 60, n: 'Lunch' }, { d: 15, n: 'B2' }];
     }
     if (durationHours > 6) {
         return [{ d: 15, n: 'B1' }, { d: 45, n: 'Lunch' }, { d: 15, n: 'B2' }];
     }
-    if (durationHours >= 6) {
+    if (durationHours > 5) {
         return [{ d: 15, n: 'B1' }, { d: 45, n: 'Lunch' }];
     }
-    if (durationHours >= 5) return [{ d: 15, n: 'B1' }];
+    if (durationHours >= 4) return [{ d: 15, n: 'B1' }];
     return [];
 }
 
@@ -386,7 +435,128 @@ function createEvenBreakSchedule(worker, plan, occupied, isCloser, closingStart)
     return bestSchedule || [];
 }
 
-function scheduleAllWorkerBreaks(workers, close) {
+function getBreakSchedulePenalty(workers) {
+    const spacingPenalty = workers.reduce((total, worker) => {
+        const workGaps = [];
+        let cursor = worker.start;
+
+        worker.tasks.forEach(task => {
+            workGaps.push(task.s - cursor);
+            cursor = task.e;
+        });
+        workGaps.push(worker.end - cursor);
+
+        const targetGap = workGaps.reduce((sum, gap) => sum + gap, 0) / workGaps.length;
+        return total + workGaps.reduce((sum, gap) => (
+            sum + Math.pow(gap - targetGap, 2)
+        ), 0);
+    }, 0);
+    const tasks = workers.flatMap(worker => worker.tasks);
+    let overlapMinutes = 0;
+
+    for (let firstIndex = 0; firstIndex < tasks.length; firstIndex++) {
+        for (let secondIndex = firstIndex + 1; secondIndex < tasks.length; secondIndex++) {
+            overlapMinutes += Math.max(
+                0,
+                Math.min(tasks[firstIndex].e, tasks[secondIndex].e)
+                    - Math.max(tasks[firstIndex].s, tasks[secondIndex].s)
+            );
+        }
+    }
+
+    return spacingPenalty + overlapMinutes * 20;
+}
+
+function getCoverageGapMinutes(workers, fittingRoomBlocks, open, close) {
+    return getCoverageSegments(workers, fittingRoomBlocks, open, close)
+        .filter(segment => segment.count === 0)
+        .reduce((total, segment) => total + segment.end - segment.start, 0);
+}
+
+function optimizeBreakCoverage(workers, open, close) {
+    const closer = getPreferredFittingRoomCloser(workers, close);
+    const closingStart = close - 60;
+    let fittingRoomBlocks = createFittingRoomRotation(workers, open, close);
+    let gapMinutes = getCoverageGapMinutes(workers, fittingRoomBlocks, open, close);
+
+    while (gapMinutes > 0) {
+        let bestMove = null;
+
+        workers.forEach(worker => {
+            worker.tasks.forEach((task, taskIndex) => {
+                const duration = task.e - task.s;
+                const originalStart = task.s;
+                const previousEnd = taskIndex === 0
+                    ? worker.start
+                    : worker.tasks[taskIndex - 1].e;
+                const nextStart = taskIndex === worker.tasks.length - 1
+                    ? worker.end
+                    : worker.tasks[taskIndex + 1].s;
+                const earliest = Math.ceil((previousEnd + 30) / 15) * 15;
+                let latest = Math.floor((nextStart - duration - 30) / 15) * 15;
+
+                if (worker === closer) latest = Math.min(latest, closingStart - duration);
+
+                for (let start = earliest; start <= latest; start += 15) {
+                    if (start === originalStart) continue;
+
+                    task.s = start;
+                    task.e = start + duration;
+                    const candidateBlocks = createFittingRoomRotation(workers, open, close);
+                    const candidateGapMinutes = getCoverageGapMinutes(
+                        workers,
+                        candidateBlocks,
+                        open,
+                        close
+                    );
+
+                    if (candidateGapMinutes < gapMinutes) {
+                        const candidate = {
+                            worker,
+                            task,
+                            start,
+                            blocks: candidateBlocks,
+                            gapMinutes: candidateGapMinutes,
+                            breakPenalty: getBreakSchedulePenalty(workers),
+                            distance: Math.abs(start - originalStart)
+                        };
+
+                        if (
+                            !bestMove
+                            || candidate.gapMinutes < bestMove.gapMinutes
+                            || (
+                                candidate.gapMinutes === bestMove.gapMinutes
+                                && candidate.breakPenalty < bestMove.breakPenalty
+                            )
+                            || (
+                                candidate.gapMinutes === bestMove.gapMinutes
+                                && candidate.breakPenalty === bestMove.breakPenalty
+                                && candidate.distance < bestMove.distance
+                            )
+                        ) {
+                            bestMove = candidate;
+                        }
+                    }
+
+                    task.s = originalStart;
+                    task.e = originalStart + duration;
+                }
+            });
+        });
+
+        if (!bestMove) break;
+
+        const duration = bestMove.task.e - bestMove.task.s;
+        bestMove.task.s = bestMove.start;
+        bestMove.task.e = bestMove.start + duration;
+        fittingRoomBlocks = bestMove.blocks;
+        gapMinutes = bestMove.gapMinutes;
+    }
+
+    return fittingRoomBlocks;
+}
+
+function scheduleAllWorkerBreaks(workers, open, close) {
     const closingTimeMins = close + 60;
     const closingStart = closingTimeMins - 120;
     const closer = getPreferredFittingRoomCloser(workers, close);
@@ -402,6 +572,8 @@ function scheduleAllWorkerBreaks(workers, close) {
         );
         occupied.push(...worker.tasks.map(task => ({ s: task.s, e: task.e })));
     });
+
+    return optimizeBreakCoverage(workers, open, close);
 }
 
 function generate() {
@@ -427,11 +599,9 @@ function generate() {
         });
     });
 
-    // Place breaks so every working interval is as even as 15-minute snapping allows.
-    // Other employees' breaks are used as a light tie-breaker so spacing stays primary.
-    scheduleAllWorkerBreaks(workers, close);
-
-    const fittingRoomBlocks = createFittingRoomRotation(workers, open, close);
+    // Start with evenly spaced breaks, then make the smallest 15-minute adjustments
+    // needed to keep at least one worker on the floor after fitting-room assignments.
+    const fittingRoomBlocks = scheduleAllWorkerBreaks(workers, open, close);
     currentSchedule = { workers, fittingRoomBlocks, open, close };
     render(workers, fittingRoomBlocks, open, close);
 }
@@ -639,7 +809,11 @@ function commitScheduleTableEdit(element) {
         worker.end = range.end;
         worker.dur = (worker.end - worker.start) / 60;
         if (autoUpdatesEnabled()) {
-            scheduleAllWorkerBreaks(currentSchedule.workers, currentSchedule.close);
+            scheduleAllWorkerBreaks(
+                currentSchedule.workers,
+                currentSchedule.open,
+                currentSchedule.close
+            );
         }
         syncWorkerEditor(worker);
         refreshCurrentSchedule();
@@ -715,29 +889,52 @@ function setupScheduleTableEditing() {
     });
 }
 
-function workerCanCoverFittingBlock(worker, block) {
-    const coversFullBlock = worker.start <= block.start && worker.end >= block.end;
-    const onBreak = worker.tasks.some(task => task.s < block.end && task.e > block.start);
-    return coversFullBlock && !onBreak;
+function workerCoversFittingBlock(worker, block) {
+    return worker.start <= block.start && worker.end >= block.end;
+}
+
+function fittingRoomBreakConflict(worker, block) {
+    return worker.tasks.find(task => task.s < block.end && task.e > block.start);
+}
+
+function minsToWarningTime(minutes) {
+    const normalized = ((minutes % 1440) + 1440) % 1440;
+    const hour = Math.floor(normalized / 60) % 12 || 12;
+    return `${hour}:${(normalized % 60).toString().padStart(2, '0')}`;
 }
 
 function fittingRoomWorkerOptions(workers, block, role) {
     const otherRole = role === 'g' ? 's' : 'g';
     const unavailableName = block[otherRole];
     const currentName = block[role];
-    const availableWorkers = workers
+    const eligibleWorkers = workers
         .filter(worker => (
-            worker.name !== unavailableName && workerCanCoverFittingBlock(worker, block)
+            worker.name !== unavailableName && workerCoversFittingBlock(worker, block)
         ))
         .sort((first, second) => (
             Number(first.name.trim().toLowerCase() === 'nayef')
             - Number(second.name.trim().toLowerCase() === 'nayef')
         ));
-    const choices = ['—', 'Manager', ...availableWorkers.map(worker => worker.name)];
+    const workerChoices = eligibleWorkers.map(worker => {
+        const conflict = fittingRoomBreakConflict(worker, block);
+        const conflictType = conflict?.type === 'Lunch' ? 'Lunch' : 'Break';
+        const warning = conflict && worker.name !== currentName
+            ? ` (❗${conflictType} at ${minsToWarningTime(conflict.s)})`
+            : '';
+        return { value: worker.name, label: `${worker.name}${warning}`, conflict };
+    });
+    const choices = [
+        { value: '—', label: '—' },
+        ...workerChoices.filter(choice => !choice.conflict),
+        ...workerChoices.filter(choice => choice.conflict),
+        { value: 'Manager', label: 'Manager' }
+    ];
 
-    if (!choices.includes(currentName)) choices.push(currentName);
+    if (!choices.some(choice => choice.value === currentName)) {
+        choices.push({ value: currentName, label: currentName });
+    }
     return choices.map(choice => (
-        `<option value="${escapeHTML(choice)}"${choice === currentName ? ' selected' : ''}>${escapeHTML(choice)}</option>`
+        `<option value="${escapeHTML(choice.value)}"${choice.value === currentName ? ' selected' : ''}>${escapeHTML(choice.label)}</option>`
     )).join('');
 }
 
@@ -1065,6 +1262,7 @@ window.addEventListener('load', () => {
     const workers = loadSavedWorkers();
     (workers === null ? samples : workers).forEach(worker => addWorkerRow(worker, false));
     ensureNewWorkerRow();
+    generate();
     document.getElementById('workersContainer').addEventListener('input', event => {
         const row = event.target.closest('.worker-row');
         if (row?.dataset.newWorker === 'true') activateNewWorkerRow(row);

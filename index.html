@@ -35,15 +35,20 @@
                         <p><span class="desktop-timeline-help">Drag breaks and lunches in 15-minute steps.</span><span class="mobile-timeline-help">Swipe across the timeline, then tap a break or lunch to adjust it.</span> Floor count excludes those and fitting-room assignments.</p>
                     </div>
                     <div id="coverageStatus" class="coverage-status" aria-live="polite"></div>
+                    <button type="button" id="timelineToggleButton" class="btn-collapse no-print" aria-label="Collapse visualizer" title="Collapse visualizer" aria-expanded="true" aria-controls="timelineVisualizerContent" onclick="toggleTimelineVisualizer()"><span class="collapse-chevron" aria-hidden="true"></span></button>
                 </div>
-                <div class="timeline-legend" aria-label="Timeline legend">
-                    <span><i class="legend-swatch work"></i>Working</span>
-                    <span><i class="legend-swatch break"></i>Break</span>
-                    <span><i class="legend-swatch lunch"></i>Lunch</span>
-                    <span><i class="legend-swatch fitting"></i>Fitting room</span>
-                    <span><i class="legend-swatch uncovered"></i>Nobody on floor</span>
+                <div id="timelineVisualizerContent" class="timeline-visualizer-content">
+                    <div class="timeline-visualizer-inner">
+                        <div class="timeline-legend" aria-label="Timeline legend">
+                            <span><i class="legend-swatch work"></i>Working</span>
+                            <span><i class="legend-swatch break"></i>Break</span>
+                            <span><i class="legend-swatch lunch"></i>Lunch</span>
+                            <span><i class="legend-swatch fitting"></i>Fitting room</span>
+                            <span><i class="legend-swatch uncovered"></i>Nobody on floor</span>
+                        </div>
+                        <div id="shiftTimeline" class="shift-timeline"></div>
+                    </div>
                 </div>
-                <div id="shiftTimeline" class="shift-timeline"></div>
             </section>
             <div class="results-grid">
                 <div>
