@@ -1302,106 +1302,6 @@ function renderTimeline(workers, fittingRoomBlocks, open, close) {
     setupTimelineDragging(rangeStart, range, position);
 }
 
-function renderProvidedShiftVisualizer() {
-    const timeline = document.getElementById('providedShiftTimeline');
-    if (!timeline) return;
-
-    const rangeStart = 240;
-    const rangeEnd = 1320;
-    const range = rangeEnd - rangeStart;
-    const position = minute => ((minute - rangeStart) / range) * 100;
-    const width = (start, end) => ((end - start) / range) * 100;
-    const workers = [
-        { name: 'Joseph', start: 240, end: 780, tasks: [[360, 375, 'B1'], [540, 600, 'Lunch'], [660, 675, 'B2']], fitting: [] },
-        { name: 'Austin', start: 255, end: 780, tasks: [[360, 375, 'B1'], [540, 600, 'Lunch'], [660, 675, 'B2']], fitting: [] },
-        { name: 'Tyra', start: 255, end: 780, tasks: [[360, 375, 'B1'], [540, 600, 'Lunch'], [660, 675, 'B2']], fitting: [] },
-        { name: 'Parham', start: 255, end: 780, tasks: [[360, 375, 'B1'], [540, 600, 'Lunch'], [660, 675, 'B2']], fitting: [] },
-        { name: 'Maria', start: 540, end: 900, tasks: [[660, 675, 'B1'], [780, 825, 'Lunch']], fitting: [[600, 780, 'Sorter'], [840, 900, 'Sorter']] },
-        { name: 'Jessica', start: 840, end: 1320, tasks: [[960, 975, 'B1'], [1080, 1125, 'Lunch'], [1200, 1215, 'B2']], fitting: [[840, 900, 'Greeter'], [900, 960, 'Greeter + Sorter'], [960, 1020, 'Sorter'], [1140, 1200, 'Sorter']] },
-        { name: 'Rylee', start: 960, end: 1320, tasks: [[1080, 1095, 'B1'], [1155, 1200, 'Lunch']], fitting: [[960, 1020, 'Greeter'], [1020, 1080, 'Sorter']] },
-        { name: 'Anh', start: 1020, end: 1320, tasks: [[1140, 1155, 'B1']], fitting: [[1020, 1080, 'Greeter'], [1080, 1140, 'Sorter']] },
-        { name: 'Nayef', start: 1020, end: 1320, tasks: [[1155, 1170, 'B1']], fitting: [[1080, 1140, 'Greeter'], [1200, 1320, 'Sorter']] },
-        { name: 'Carmen', start: 420, end: 960, tasks: [], fitting: [], manager: true },
-        { name: 'Pat', start: 780, end: 1320, tasks: [], fitting: [[780, 840, 'Greeter + Sorter']], manager: true }
-    ];
-    const boundaries = new Set([rangeStart, rangeEnd]);
-
-    workers.forEach(worker => {
-        boundaries.add(worker.start);
-        boundaries.add(worker.end);
-        worker.tasks.forEach(task => {
-            boundaries.add(task[0]);
-            boundaries.add(task[1]);
-        });
-        worker.fitting.forEach(interval => {
-            boundaries.add(interval[0]);
-            boundaries.add(interval[1]);
-        });
-    });
-
-    const points = Array.from(boundaries).sort((first, second) => first - second);
-    const coverage = [];
-
-    for (let index = 0; index < points.length - 1; index++) {
-        const start = points[index];
-        const end = points[index + 1];
-        const midpoint = start + (end - start) / 2;
-        const count = workers.filter(worker => (
-            !worker.manager
-            && worker.start <= midpoint
-            && worker.end > midpoint
-            && !worker.tasks.some(task => task[0] < end && task[1] > start)
-            && !worker.fitting.some(interval => interval[0] < end && interval[1] > start)
-        )).length;
-        const previous = coverage[coverage.length - 1];
-
-        if (previous && previous.count === count && previous.end === start) previous.end = end;
-        else coverage.push({ start, end, count });
-    }
-
-    const ticks = [];
-    for (let minute = rangeStart; minute <= rangeEnd; minute += 60) {
-        ticks.push(`<i class="axis-tick" style="left:${position(minute)}%"><span>${minsToTime(minute).replace(':00', '')}</span></i>`);
-    }
-
-    const coverageSegments = coverage.map(segment => {
-        const state = segment.count === 0 ? 'none' : segment.count === 1 ? 'low' : '';
-        const title = segment.count === 0
-            ? `Nobody on the floor, ${minsToTime(segment.start)} to ${minsToTime(segment.end)}`
-            : `${segment.count} on the floor, ${minsToTime(segment.start)} to ${minsToTime(segment.end)}`;
-        return `<span class="timeline-segment coverage-segment ${state}" style="left:${position(segment.start)}%;width:${width(segment.start, segment.end)}%" title="${title}"><span>${segment.count}</span></span>`;
-    }).join('');
-
-    const workerRows = workers.map(worker => {
-        const safeName = escapeHTML(worker.name);
-        const managerBadge = worker.manager ? '<span class="manager-badge">Manager</span>' : '';
-        const work = `<span class="timeline-segment work-segment" style="left:${position(worker.start)}%;width:${width(worker.start, worker.end)}%" title="${safeName}: ${minsToCompactTime(worker.start)}&ndash;${minsToCompactTime(worker.end)}"></span>`;
-        const fitting = worker.fitting.map(interval => {
-            const roleLabel = interval[2] === 'Greeter + Sorter' ? 'G+S' : interval[2].charAt(0);
-            return `<span class="timeline-segment fitting-segment reference-fitting-segment" style="left:${position(interval[0])}%;width:${width(interval[0], interval[1])}%" aria-label="${interval[2]} in fitting room from ${minsToTime(interval[0])} to ${minsToTime(interval[1])}">${roleLabel}</span>`;
-        }).join('');
-        const tasks = worker.tasks.map(task => {
-            const label = taskDisplayName({ type: task[2] });
-            return `<span class="timeline-segment task-segment ${task[2] === 'Lunch' ? 'lunch' : ''}" style="left:${position(task[0])}%;width:${width(task[0], task[1])}%" aria-label="${label}, ${minsToTime(task[0])} to ${minsToTime(task[1])}" title="${label}: ${minsToTime(task[0])}&ndash;${minsToTime(task[1])}"></span>`;
-        }).join('');
-
-        return `
-            <div class="timeline-label"><strong title="${safeName}">${safeName}${managerBadge}</strong><small>${formatDuration(worker.end - worker.start)} &middot; ${minsToCompactTime(worker.start)}&ndash;${minsToCompactTime(worker.end)}</small></div>
-            <div class="timeline-track">${work}${fitting}${tasks}</div>`;
-    }).join('');
-
-    timeline.innerHTML = `
-        <div class="timeline-scroll">
-            <div class="timeline-grid" style="--hour-width:${100 / (range / 60)}%">
-                <div class="timeline-axis-label">Provided day</div>
-                <div class="timeline-axis">${ticks.join('')}</div>
-                <div class="timeline-label coverage-label"><strong>On the floor</strong><small>Excludes managers, breaks, lunch &amp; fitting room</small></div>
-                <div class="timeline-track coverage-track">${coverageSegments}</div>
-                ${workerRows}
-            </div>
-        </div>`;
-}
-
 function render(workers, fr, open, close) {
     document.getElementById('results').style.display = 'block';
     renderTimeline(workers, fr, open, close);
@@ -1442,7 +1342,6 @@ window.addEventListener('load', () => {
     (workers === null ? samples : workers).forEach(worker => addWorkerRow(worker, false));
     ensureNewWorkerRow();
     generate();
-    renderProvidedShiftVisualizer();
     const workersContainer = document.getElementById('workersContainer');
     workersContainer.addEventListener('input', event => {
         const row = event.target.closest('.worker-row');
