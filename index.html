@@ -20,6 +20,7 @@
             <div class="input-group"><label for="storeOpen">Store Opens</label><select class="hour-picker" id="storeOpen"></select></div>
             <div class="input-group"><label for="storeClose">Store Closes</label><select class="hour-picker" id="storeClose"></select></div>
         </div>
+        <p id="shiftTimeHint" class="time-entry-hint no-print"><strong>Smart time tip:</strong> Enter <code>4</code> and press <kbd>Tab</kbd> for <code>4:00 pm</code>. You can also type <code>4am</code>, <code>4:00 am</code>, or <code>4:30pm</code>.</p>
         <div id="workersContainer" class="no-print"></div>
         <div class="button-group no-print">
             <button class="btn-add" onclick="clearWorkers()" title="Remove all worker entries">× Clear All Workers</button>
@@ -93,6 +94,25 @@
                 </div>
             </div>
         </div>
+
+        <section class="timeline-section reference-shift-section no-print" aria-labelledby="providedShiftTitle">
+            <div class="reference-shift-heading">
+                <div>
+                    <h2 id="providedShiftTitle">Provided Shift Visualizer</h2>
+                    <p>Read-only view of the supplied shift, break, lunch, and fitting-room data. Carmen and Pat are managers.</p>
+                </div>
+                <span class="reference-badge">Separate test</span>
+            </div>
+            <div class="timeline-legend" aria-label="Provided shift legend">
+                <span><i class="legend-swatch work"></i>Working</span>
+                <span><i class="legend-swatch break"></i>Break</span>
+                <span><i class="legend-swatch lunch"></i>Lunch</span>
+                <span><i class="legend-swatch fitting"></i>Fitting room</span>
+                <span><i class="legend-swatch uncovered"></i>Nobody on floor</span>
+            </div>
+            <div id="providedShiftTimeline" class="shift-timeline"></div>
+        </section>
+
     </div>
 
     <footer class="site-footer">

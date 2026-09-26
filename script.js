@@ -1,7 +1,7 @@
 const samples = [
     { n: "James", s: "09:00", e: "18:00" }, { n: "Mary", s: "09:00", e: "14:00" },
-    { n: "John", s: "10:00", e: "16:00" }, { n: "Lauren", s: "12:00", e: "21:00" },
-    { n: "Robert", s: "13:00", e: "22:00" }, { n: "Patricia", s: "14:00", e: "22:00" },
+    { n: "Sue", s: "10:00", e: "16:00" }, { n: "Bob", s: "12:00", e: "21:00" },
+    { n: "Andres", s: "13:00", e: "22:00" }, { n: "Patricia", s: "14:00", e: "22:00" },
     { n: "Michael", s: "16:00", e: "22:00" }, { n: "Barbara", s: "17:00", e: "22:00" }
 ];
 const WORKERS_STORAGE_KEY = 'nordy-workers';
@@ -41,6 +41,16 @@ function escapeHTML(value) {
     return String(value).replace(/[&<>'"]/g, char => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
     })[char]);
+}
+
+function capitalizeFirstLetter(value) {
+    const text = String(value);
+    const firstCharacterIndex = text.search(/\S/);
+    if (firstCharacterIndex === -1) return text;
+
+    return text.slice(0, firstCharacterIndex)
+        + text[firstCharacterIndex].toLocaleUpperCase()
+        + text.slice(firstCharacterIndex + 1);
 }
 
 function formatDuration(minutes) {
@@ -189,7 +199,7 @@ function copyFittingRoomRotation() {
 function getWorkerEntries() {
     return Array.from(document.querySelectorAll('.worker-row:not([data-new-worker="true"])'))
         .map(row => ({
-            n: row.querySelector('.w-name').value,
+            n: capitalizeFirstLetter(row.querySelector('.w-name').value),
             s: row.querySelector('.w-start').value,
             e: row.querySelector('.w-end').value
         }));
@@ -225,11 +235,14 @@ function loadSavedWorkers() {
 
 function addWorkerRow(data = { n: '', s: '', e: '' }, shouldSave = true, isNewWorker = false) {
     const id = Math.random().toString(36).substring(2, 9);
+    const name = capitalizeFirstLetter(data.n);
+    const start = formatShiftTimeInput(data.s);
+    const end = formatShiftTimeInput(data.e);
     document.getElementById('workersContainer').insertAdjacentHTML('beforeend', `
     <div class="worker-row${isNewWorker ? ' new-worker-row' : ''}" id="${id}"${isNewWorker ? ' data-new-worker="true"' : ''}>
-        <div class="input-group"><label>Name</label><input type="text" class="w-name" value="${escapeHTML(data.n)}"></div>
-        <div class="input-group"><label>Start</label><input type="time" class="w-start" value="${escapeHTML(data.s)}"></div>
-        <div class="input-group"><label>End</label><input type="time" class="w-end" value="${escapeHTML(data.e)}"></div>
+        <div class="input-group"><label>Name</label><input type="text" class="w-name" value="${escapeHTML(name)}"></div>
+        <div class="input-group"><label>Start</label><input type="text" class="w-start" value="${escapeHTML(start)}" placeholder="4am" autocomplete="off" spellcheck="false" aria-describedby="shiftTimeHint"></div>
+        <div class="input-group"><label>End</label><input type="text" class="w-end" value="${escapeHTML(end)}" placeholder="4pm" autocomplete="off" spellcheck="false" aria-describedby="shiftTimeHint"></div>
         <button class="btn-remove" aria-label="Remove worker" onclick="removeWorkerRow('${id}')"${isNewWorker ? ' hidden' : ''}>&times;</button>
     </div>`);
     if (shouldSave) saveWorkers();
@@ -290,6 +303,18 @@ function getPreferredFittingRoomCloser(workers, close) {
         || workers[workers.length - 1];
 }
 
+function isNayefName(name) {
+    return String(name).trim().toLowerCase() === 'nayef';
+}
+
+function keepNayefInSorterRole(block) {
+    if (!isNayefName(block.g)) return;
+
+    const previousSorter = block.s;
+    block.s = block.g;
+    block.g = isNayefName(previousSorter) ? 'Manager' : previousSorter;
+}
+
 function createFittingRoomRotation(workers, open, close) {
     const closingTimeMins = close + 60;
     const closingStart = closingTimeMins - 120;
@@ -335,7 +360,7 @@ function createFittingRoomRotation(workers, open, close) {
             block.s = choice ? choice.name : 'Manager';
         }
 
-        if (start >= open + 120 && start < close - 120) {
+        if (start >= open + 180 && start < close - 120) {
             const options = workers.filter(worker => isAvailable(worker, [block.s]));
             const fallbackOptions = workers.filter(worker => (
                 worker.name !== block.s
@@ -345,6 +370,8 @@ function createFittingRoomRotation(workers, open, close) {
             const choice = chooseWorker(options) || chooseWorker(fallbackOptions);
             block.g = choice ? choice.name : 'Manager';
         }
+
+        keepNayefInSorterRole(block);
 
         workers.forEach(worker => {
             if (worker.name === block.s || worker.name === block.g) {
@@ -473,13 +500,34 @@ function getCoverageGapMinutes(workers, fittingRoomBlocks, open, close) {
         .reduce((total, segment) => total + segment.end - segment.start, 0);
 }
 
+function getManagerAssignmentCount(fittingRoomBlocks) {
+    return fittingRoomBlocks.reduce((total, block) => (
+        total + Number(block.g === 'Manager') + Number(block.s === 'Manager')
+    ), 0);
+}
+
+function getScheduleQuality(workers, fittingRoomBlocks, open, close) {
+    return {
+        managerAssignments: getManagerAssignmentCount(fittingRoomBlocks),
+        gapMinutes: getCoverageGapMinutes(workers, fittingRoomBlocks, open, close),
+        breakPenalty: getBreakSchedulePenalty(workers)
+    };
+}
+
+function compareScheduleQuality(first, second) {
+    // Fitting-room staffing is the hard priority, followed by floor coverage and spacing.
+    return first.managerAssignments - second.managerAssignments
+        || first.gapMinutes - second.gapMinutes
+        || first.breakPenalty - second.breakPenalty;
+}
+
 function optimizeBreakCoverage(workers, open, close) {
     const closer = getPreferredFittingRoomCloser(workers, close);
     const closingStart = close - 60;
     let fittingRoomBlocks = createFittingRoomRotation(workers, open, close);
-    let gapMinutes = getCoverageGapMinutes(workers, fittingRoomBlocks, open, close);
+    let scheduleQuality = getScheduleQuality(workers, fittingRoomBlocks, open, close);
 
-    while (gapMinutes > 0) {
+    while (true) {
         let bestMove = null;
 
         workers.forEach(worker => {
@@ -503,34 +551,28 @@ function optimizeBreakCoverage(workers, open, close) {
                     task.s = start;
                     task.e = start + duration;
                     const candidateBlocks = createFittingRoomRotation(workers, open, close);
-                    const candidateGapMinutes = getCoverageGapMinutes(
+                    const candidateQuality = getScheduleQuality(
                         workers,
                         candidateBlocks,
                         open,
                         close
                     );
 
-                    if (candidateGapMinutes < gapMinutes) {
+                    if (compareScheduleQuality(candidateQuality, scheduleQuality) < 0) {
                         const candidate = {
                             worker,
                             task,
                             start,
                             blocks: candidateBlocks,
-                            gapMinutes: candidateGapMinutes,
-                            breakPenalty: getBreakSchedulePenalty(workers),
+                            quality: candidateQuality,
                             distance: Math.abs(start - originalStart)
                         };
 
                         if (
                             !bestMove
-                            || candidate.gapMinutes < bestMove.gapMinutes
+                            || compareScheduleQuality(candidate.quality, bestMove.quality) < 0
                             || (
-                                candidate.gapMinutes === bestMove.gapMinutes
-                                && candidate.breakPenalty < bestMove.breakPenalty
-                            )
-                            || (
-                                candidate.gapMinutes === bestMove.gapMinutes
-                                && candidate.breakPenalty === bestMove.breakPenalty
+                                compareScheduleQuality(candidate.quality, bestMove.quality) === 0
                                 && candidate.distance < bestMove.distance
                             )
                         ) {
@@ -550,7 +592,7 @@ function optimizeBreakCoverage(workers, open, close) {
         bestMove.task.s = bestMove.start;
         bestMove.task.e = bestMove.start + duration;
         fittingRoomBlocks = bestMove.blocks;
-        gapMinutes = bestMove.gapMinutes;
+        scheduleQuality = bestMove.quality;
     }
 
     return fittingRoomBlocks;
@@ -582,12 +624,12 @@ function generate() {
     if (close < open) close += 1440;
     const workers = [];
     document.querySelectorAll('.worker-row').forEach(row => {
-        const name = row.querySelector('.w-name').value.trim();
+        const name = capitalizeFirstLetter(row.querySelector('.w-name').value.trim());
         const startValue = row.querySelector('.w-start').value;
         const endValue = row.querySelector('.w-end').value;
-        if (!name || !startValue || !endValue) return;
-        let s = timeToMins(startValue);
-        let e = timeToMins(endValue);
+        let s = parseShiftTimeInput(startValue);
+        let e = parseShiftTimeInput(endValue);
+        if (!name || s === null || e === null) return;
         if (e < s) e += 1440;
         workers.push({
             name,
@@ -599,8 +641,8 @@ function generate() {
         });
     });
 
-    // Start with evenly spaced breaks, then make the smallest 15-minute adjustments
-    // needed to keep at least one worker on the floor after fitting-room assignments.
+    // Start with evenly spaced breaks, then adjust them in 15-minute steps. Prioritize
+    // fitting-room staffing first, floor coverage second, and even spacing third.
     const fittingRoomBlocks = scheduleAllWorkerBreaks(workers, open, close);
     currentSchedule = { workers, fittingRoomBlocks, open, close };
     render(workers, fittingRoomBlocks, open, close);
@@ -719,12 +761,13 @@ function getFittingRoomIntervals(worker, fittingRoomBlocks) {
 
 function minsToInputTime(minutes) {
     const normalized = ((minutes % 1440) + 1440) % 1440;
-    const hours = Math.floor(normalized / 60).toString().padStart(2, '0');
+    const hour24 = Math.floor(normalized / 60);
+    const hours = hour24 % 12 || 12;
     const mins = (normalized % 60).toString().padStart(2, '0');
-    return `${hours}:${mins}`;
+    return `${hours}:${mins} ${hour24 >= 12 ? 'pm' : 'am'}`;
 }
 
-function parseClockValue(value, referenceMinutes) {
+function parseTimeOfDay(value) {
     const match = value.trim().toLowerCase().match(/^(\d{1,2})(?::(\d{2}))?\s*([ap]m)?$/);
     if (!match) return null;
 
@@ -740,7 +783,43 @@ function parseClockValue(value, referenceMinutes) {
         return null;
     }
 
-    let result = hours * 60 + minutes;
+    return hours * 60 + minutes;
+}
+
+function parseShiftTimeInput(value) {
+    const trimmed = value.trim();
+    const bareHour = trimmed.match(/^\d{1,2}$/);
+
+    if (bareHour) {
+        const hours = Number(bareHour[0]);
+        if (hours >= 1 && hours <= 12) return hours % 12 * 60 + 720;
+    }
+
+    return parseTimeOfDay(trimmed);
+}
+
+function formatShiftTimeInput(value) {
+    if (!value) return '';
+    const minutes = parseShiftTimeInput(value);
+    return minutes === null ? value : minsToInputTime(minutes);
+}
+
+function normalizeShiftTimeInput(input) {
+    const minutes = parseShiftTimeInput(input.value);
+
+    if (minutes === null) {
+        input.toggleAttribute('aria-invalid', input.value.trim() !== '');
+        return false;
+    }
+
+    input.value = minsToInputTime(minutes);
+    input.removeAttribute('aria-invalid');
+    return true;
+}
+
+function parseClockValue(value, referenceMinutes) {
+    let result = parseTimeOfDay(value);
+    if (result === null) return null;
     while (result - referenceMinutes > 720) result -= 1440;
     while (referenceMinutes - result > 720) result += 1440;
     return result;
@@ -1208,7 +1287,7 @@ function renderTimeline(workers, fittingRoomBlocks, open, close) {
             <div class="timeline-grid" style="--hour-width:${100 / (range / 60)}%">
                 <div class="timeline-axis-label">Store day</div>
                 <div class="timeline-axis">${ticks.join('')}</div>
-                <div class="timeline-label coverage-label"><strong>On the floor</strong><small>Excludes breaks &amp; fitting room</small></div>
+                <div class="timeline-label coverage-label"><strong>On the floor</strong><small>Excludes Managers</small></div>
                 <div class="timeline-track coverage-track">${coverageSegments}</div>
                 ${workerRows}
             </div>
@@ -1221,6 +1300,106 @@ function renderTimeline(workers, fittingRoomBlocks, open, close) {
             </div>
         </div>`;
     setupTimelineDragging(rangeStart, range, position);
+}
+
+function renderProvidedShiftVisualizer() {
+    const timeline = document.getElementById('providedShiftTimeline');
+    if (!timeline) return;
+
+    const rangeStart = 240;
+    const rangeEnd = 1320;
+    const range = rangeEnd - rangeStart;
+    const position = minute => ((minute - rangeStart) / range) * 100;
+    const width = (start, end) => ((end - start) / range) * 100;
+    const workers = [
+        { name: 'Joseph', start: 240, end: 780, tasks: [[360, 375, 'B1'], [540, 600, 'Lunch'], [660, 675, 'B2']], fitting: [] },
+        { name: 'Austin', start: 255, end: 780, tasks: [[360, 375, 'B1'], [540, 600, 'Lunch'], [660, 675, 'B2']], fitting: [] },
+        { name: 'Tyra', start: 255, end: 780, tasks: [[360, 375, 'B1'], [540, 600, 'Lunch'], [660, 675, 'B2']], fitting: [] },
+        { name: 'Parham', start: 255, end: 780, tasks: [[360, 375, 'B1'], [540, 600, 'Lunch'], [660, 675, 'B2']], fitting: [] },
+        { name: 'Maria', start: 540, end: 900, tasks: [[660, 675, 'B1'], [780, 825, 'Lunch']], fitting: [[600, 780, 'Sorter'], [840, 900, 'Sorter']] },
+        { name: 'Jessica', start: 840, end: 1320, tasks: [[960, 975, 'B1'], [1080, 1125, 'Lunch'], [1200, 1215, 'B2']], fitting: [[840, 900, 'Greeter'], [900, 960, 'Greeter + Sorter'], [960, 1020, 'Sorter'], [1140, 1200, 'Sorter']] },
+        { name: 'Rylee', start: 960, end: 1320, tasks: [[1080, 1095, 'B1'], [1155, 1200, 'Lunch']], fitting: [[960, 1020, 'Greeter'], [1020, 1080, 'Sorter']] },
+        { name: 'Anh', start: 1020, end: 1320, tasks: [[1140, 1155, 'B1']], fitting: [[1020, 1080, 'Greeter'], [1080, 1140, 'Sorter']] },
+        { name: 'Nayef', start: 1020, end: 1320, tasks: [[1155, 1170, 'B1']], fitting: [[1080, 1140, 'Greeter'], [1200, 1320, 'Sorter']] },
+        { name: 'Carmen', start: 420, end: 960, tasks: [], fitting: [], manager: true },
+        { name: 'Pat', start: 780, end: 1320, tasks: [], fitting: [[780, 840, 'Greeter + Sorter']], manager: true }
+    ];
+    const boundaries = new Set([rangeStart, rangeEnd]);
+
+    workers.forEach(worker => {
+        boundaries.add(worker.start);
+        boundaries.add(worker.end);
+        worker.tasks.forEach(task => {
+            boundaries.add(task[0]);
+            boundaries.add(task[1]);
+        });
+        worker.fitting.forEach(interval => {
+            boundaries.add(interval[0]);
+            boundaries.add(interval[1]);
+        });
+    });
+
+    const points = Array.from(boundaries).sort((first, second) => first - second);
+    const coverage = [];
+
+    for (let index = 0; index < points.length - 1; index++) {
+        const start = points[index];
+        const end = points[index + 1];
+        const midpoint = start + (end - start) / 2;
+        const count = workers.filter(worker => (
+            !worker.manager
+            && worker.start <= midpoint
+            && worker.end > midpoint
+            && !worker.tasks.some(task => task[0] < end && task[1] > start)
+            && !worker.fitting.some(interval => interval[0] < end && interval[1] > start)
+        )).length;
+        const previous = coverage[coverage.length - 1];
+
+        if (previous && previous.count === count && previous.end === start) previous.end = end;
+        else coverage.push({ start, end, count });
+    }
+
+    const ticks = [];
+    for (let minute = rangeStart; minute <= rangeEnd; minute += 60) {
+        ticks.push(`<i class="axis-tick" style="left:${position(minute)}%"><span>${minsToTime(minute).replace(':00', '')}</span></i>`);
+    }
+
+    const coverageSegments = coverage.map(segment => {
+        const state = segment.count === 0 ? 'none' : segment.count === 1 ? 'low' : '';
+        const title = segment.count === 0
+            ? `Nobody on the floor, ${minsToTime(segment.start)} to ${minsToTime(segment.end)}`
+            : `${segment.count} on the floor, ${minsToTime(segment.start)} to ${minsToTime(segment.end)}`;
+        return `<span class="timeline-segment coverage-segment ${state}" style="left:${position(segment.start)}%;width:${width(segment.start, segment.end)}%" title="${title}"><span>${segment.count}</span></span>`;
+    }).join('');
+
+    const workerRows = workers.map(worker => {
+        const safeName = escapeHTML(worker.name);
+        const managerBadge = worker.manager ? '<span class="manager-badge">Manager</span>' : '';
+        const work = `<span class="timeline-segment work-segment" style="left:${position(worker.start)}%;width:${width(worker.start, worker.end)}%" title="${safeName}: ${minsToCompactTime(worker.start)}&ndash;${minsToCompactTime(worker.end)}"></span>`;
+        const fitting = worker.fitting.map(interval => {
+            const roleLabel = interval[2] === 'Greeter + Sorter' ? 'G+S' : interval[2].charAt(0);
+            return `<span class="timeline-segment fitting-segment reference-fitting-segment" style="left:${position(interval[0])}%;width:${width(interval[0], interval[1])}%" aria-label="${interval[2]} in fitting room from ${minsToTime(interval[0])} to ${minsToTime(interval[1])}">${roleLabel}</span>`;
+        }).join('');
+        const tasks = worker.tasks.map(task => {
+            const label = taskDisplayName({ type: task[2] });
+            return `<span class="timeline-segment task-segment ${task[2] === 'Lunch' ? 'lunch' : ''}" style="left:${position(task[0])}%;width:${width(task[0], task[1])}%" aria-label="${label}, ${minsToTime(task[0])} to ${minsToTime(task[1])}" title="${label}: ${minsToTime(task[0])}&ndash;${minsToTime(task[1])}"></span>`;
+        }).join('');
+
+        return `
+            <div class="timeline-label"><strong title="${safeName}">${safeName}${managerBadge}</strong><small>${formatDuration(worker.end - worker.start)} &middot; ${minsToCompactTime(worker.start)}&ndash;${minsToCompactTime(worker.end)}</small></div>
+            <div class="timeline-track">${work}${fitting}${tasks}</div>`;
+    }).join('');
+
+    timeline.innerHTML = `
+        <div class="timeline-scroll">
+            <div class="timeline-grid" style="--hour-width:${100 / (range / 60)}%">
+                <div class="timeline-axis-label">Provided day</div>
+                <div class="timeline-axis">${ticks.join('')}</div>
+                <div class="timeline-label coverage-label"><strong>On the floor</strong><small>Excludes managers, breaks, lunch &amp; fitting room</small></div>
+                <div class="timeline-track coverage-track">${coverageSegments}</div>
+                ${workerRows}
+            </div>
+        </div>`;
 }
 
 function render(workers, fr, open, close) {
@@ -1263,9 +1442,36 @@ window.addEventListener('load', () => {
     (workers === null ? samples : workers).forEach(worker => addWorkerRow(worker, false));
     ensureNewWorkerRow();
     generate();
-    document.getElementById('workersContainer').addEventListener('input', event => {
+    renderProvidedShiftVisualizer();
+    const workersContainer = document.getElementById('workersContainer');
+    workersContainer.addEventListener('input', event => {
         const row = event.target.closest('.worker-row');
+        if (event.target.matches('.w-name')) {
+            const selectionStart = event.target.selectionStart;
+            const selectionEnd = event.target.selectionEnd;
+            const capitalizedName = capitalizeFirstLetter(event.target.value);
+
+            if (capitalizedName !== event.target.value) {
+                event.target.value = capitalizedName;
+                if (selectionStart !== null && selectionEnd !== null) {
+                    event.target.setSelectionRange(selectionStart, selectionEnd);
+                }
+            }
+        }
+        if (event.target.matches('.w-start, .w-end')) {
+            event.target.removeAttribute('aria-invalid');
+        }
         if (row?.dataset.newWorker === 'true') activateNewWorkerRow(row);
         else saveWorkers();
+    });
+    workersContainer.addEventListener('focusout', event => {
+        if (!event.target.matches('.w-start, .w-end')) return;
+        normalizeShiftTimeInput(event.target);
+        saveWorkers();
+    });
+    workersContainer.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' || !event.target.matches('.w-start, .w-end')) return;
+        event.preventDefault();
+        event.target.blur();
     });
 });
